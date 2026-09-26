@@ -270,18 +270,20 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(data?.broadcast_id){try {const {data:push,error:pushError}=await supabase!.functions.invoke('et-send-push',{body:{broadcastId:data.broadcast_id}});if(pushError||push?.error||push?.failed)return 'Cuadrante publicado y aviso guardado. Algunas notificaciones push no se han podido entregar.'} catch {return 'Cuadrante publicado y aviso guardado. No se ha podido confirmar la entrega de las notificaciones push.'}}
     return null
   }
+  const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
   const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
   const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
 
   return <div className="app-shell">
-    <aside className={mobileNav ? 'sidebar open' : 'sidebar'}>
+    <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-icon"><Clock3 /></span><div><strong>EndoTurnos</strong><small>Endonutrición</small></div></div>
       <nav>{nav.map(([key, Icon, label]) => <button key={key} className={(view === 'home' && !isSupervisor ? 'calendar' : view) === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="mini-profile"><img src={mascot.src} alt="" /><div><strong>{activeProfile.display_name}</strong><small>{isSupervisor ? 'Supervisora' : 'Profesional'}</small></div></div><button className="icon-button" title="Cerrar sesión" onClick={() => demo ? onExitDemo() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
     </aside>
-    <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''}`}>
+    {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
+    <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'||(view==='home'&&!isSupervisor)?'calendar-screen':''}`}>
       {loadError && <div role="alert" className="form-message">{loadError}<button className="soft-button" onClick={loadData}>Reintentar</button></div>}
-      <header className="topbar"><button aria-label="Abrir menú" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="icon-button notification-button" title="Notificaciones" onClick={() => { if (isSupervisor) { setView('home') } else setView(unreadRequests > 0 && unreadBroadcasts === 0 ? 'requests' : 'broadcasts') }}><Bell size={19} />{topNotificationTotal > 0 && <b>{topNotificationTotal}</b>}</button><button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
+      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="icon-button notification-button" title="Notificaciones" onClick={() => { if (isSupervisor) { setView('home') } else setView(unreadRequests > 0 && unreadBroadcasts === 0 ? 'requests' : 'broadcasts') }}><Bell size={19} />{topNotificationTotal > 0 && <b>{topNotificationTotal}</b>}</button><button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
       <Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />
       {isSupervisor && view !== 'home' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('home')} />}
       {unreadTotal > 0 && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 solicitud nueva' : `${unreadRequests} solicitudes nuevas`}</span><strong>Ver solicitudes</strong></button>}</div>}
@@ -296,6 +298,11 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} onConsultationsChange={setConsultations} reload={loadData} />}
       {view === 'profile' && <ProfileView coverageProfile={coverageProfiles.find(p=>p.staff_id===activeProfile.id)} onCoverageChange={setCoverageProfiles} consultations={consultations} profile={activeProfile} demo={demo} onUpdated={(key) => { setProfile(p => p ? { ...p, mascot_key: key } : p); setStaff(p => p.map(s => s.id === activeProfile.id ? { ...s, mascot_key: key } : s)) }} reload={loadData} />}
     </main>
+    <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
+      const active=(view==='home'&&!isSupervisor?'calendar':view)===key
+      const count=key==='broadcasts'?unreadBroadcasts:key==='requests'?unreadRequests:0
+      return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{setView(key);setMobileNav(false);if(key==='requests')setRequestFocus(null);window.scrollTo({top:0,behavior:'smooth'})}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
+    })}</nav>
   </div>
 }
 
