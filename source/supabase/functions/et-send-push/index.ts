@@ -5,7 +5,7 @@ import webpush from "npm:web-push@3.6.7";
 const origin = "https://beamd-endonutri.github.io";
 const cors = {
   "Access-Control-Allow-Origin": origin,
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
@@ -49,4 +49,3 @@ Deno.serve(async (request) => {
   }));
   return reply({ sent: results.filter(result => result.status === "fulfilled").length, failed: results.filter(result => result.status === "rejected").length });
 });
-
