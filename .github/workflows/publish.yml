@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/publish.yml"
+      - "source/src/**"
   workflow_dispatch:
 
 permissions:
@@ -51,6 +52,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No publication changes."
           else
-            git commit -m "deploy: account linking and staff management"
+            git commit -m "deploy: publish EndoTurnos update"
             git push
           fi

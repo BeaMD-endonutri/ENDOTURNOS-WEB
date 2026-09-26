@@ -291,6 +291,10 @@ textarea { min-height: 100px; resize: vertical; }
 .priority-item.critical > svg {color:#b3473c;}
 .priority-item.warning > svg {color:#977020;}
 .priority-item .soft-button { padding:9px 12px;font-size:12px;flex-shrink:0;max-width:155px; }
+.queue-count { display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 7px;border-radius:999px;background:#edf3e8;color:#31543a;font-size:14px;vertical-align:middle; }
+.queue-level { display:inline-block;margin-bottom:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em; }
+.queue-level.urgent { background:#fbe9e6;color:#9f392e; }
+.queue-level.review { background:#fff2d8;color:#825a12; }
 .scope-filter { min-width:150px; }
 .day-person { display:grid;grid-template-columns:1fr auto;gap:7px;padding:14px 0;border-bottom:1px solid var(--line);font-size:14px; }
 .day-person > div { grid-column:1;display:flex;flex-wrap:wrap;gap:7px; }
