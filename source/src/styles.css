@@ -85,6 +85,11 @@ textarea { min-height: 100px; resize: vertical; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .top-actions .icon-button { background: white; border: 1px solid var(--line); }
 .notification-button { position: relative; }
+.push-settings { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 20px; padding: 18px 20px; }
+.push-settings h2 { display: flex; align-items: center; gap: 8px; font-size: 18px; margin: 0 0 6px; }
+.push-settings p { margin: 0 0 7px; color: #536c5e; }
+.push-settings .soft-button { flex: 0 0 auto; }
+@media (max-width: 650px) { .push-settings { flex-direction: column; align-items: stretch; } }
 .notification-button b { position: absolute; right: -5px; top: -6px; min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 5px; border-radius: 999px; background: var(--coral); color: white; font-size: 10px; }
 .avatar-button { width: 40px; height: 40px; background: #e4eee4; }
 .avatar-button img { width: 36px; height: 36px; object-fit: contain; }

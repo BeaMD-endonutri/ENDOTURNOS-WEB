@@ -7,6 +7,7 @@ import { CONSULTATIONS, DEMO_STAFF, HOLIDAYS, MASCOTS } from './data/constants'
 import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
 import type { CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
@@ -135,7 +136,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [requests, setRequests] = useState<ShiftRequest[]>([])
   const [tasks, setTasks] = useState<PersonalTask[]>([])
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
-  const [view, setView] = useState<View>('home')
+  const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null)
   const [coverageProfiles, setCoverageProfiles] = useState<CoverageProfile[]>([])
   const [history, setHistory] = useState<AssignmentHistory[]>([])
@@ -308,19 +309,25 @@ function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChan
   const editBroadcast = (item: TeamBroadcast) => { setEditingId(item.id); setTitle(item.title); setMessage(item.message); setSelected(new Set(item.et_broadcast_recipients.map(recipient => recipient.staff_id))); setFeedback(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setFeedback('')
+    let pushFailed = false
     const recipientIds = [...selected]
     if (!recipientIds.length) { setFeedback('Elige al menos a una persona.'); return }
     if (demo) {
       if (editingId) onChange(current => current.map(item => item.id === editingId ? { ...item, title: title.trim(), message: message.trim(), et_broadcast_recipients: recipientIds.map(staff_id => ({ staff_id, read_at: null })) } : item))
       else { const next: TeamBroadcast = { id: crypto.randomUUID(), title: title.trim() || 'Recordatorio', message: message.trim(), created_by: profile.user_id ?? 'demo', created_at: new Date().toISOString(), et_broadcast_recipients: recipientIds.map(staff_id => ({ staff_id, read_at: null })) }; onChange(current => [next, ...current]) }
     } else {
-      const { error } = editingId
+      const { data: createdId, error } = editingId
         ? await supabase!.rpc('et_update_broadcast', { p_broadcast_id: editingId, p_title: title, p_message: message, p_recipient_ids: recipientIds })
         : await supabase!.rpc('et_create_broadcast', { p_title: title, p_message: message, p_recipient_ids: recipientIds })
       if (error) { setFeedback('No se ha podido enviar el aviso. Inténtalo de nuevo.'); return }
+      if (!editingId && createdId) {
+        const { data: pushResult, error: pushError } = await supabase!.functions.invoke('et-send-push', { body: { broadcastId: createdId } })
+        if (pushError || pushResult?.error || pushResult?.failed) pushFailed = true
+      }
       await reload()
     }
     resetForm()
+    if (pushFailed) setFeedback('El aviso se ha guardado, pero no se han podido enviar las notificaciones push.')
   }
   const markRead = async (broadcastId: string) => {
     if (demo) onChange(current => current.map(item => item.id === broadcastId ? { ...item, et_broadcast_recipients: item.et_broadcast_recipients.map(recipient => recipient.staff_id === profile.id ? { ...recipient, read_at: new Date().toISOString() } : recipient) } : item))
@@ -500,6 +507,27 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
   </section>
 }
 
+function PushSettings({ userId, demo }: { userId?: string | null; demo: boolean }) {
+  const [enabled, setEnabled] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    if (!demo && pushAvailable()) void getPushSubscription().then(subscription => setEnabled(Boolean(subscription))).catch(() => undefined)
+  }, [demo])
+  if (demo || !userId) return null
+  const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent)
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as Navigator & { standalone?: boolean }).standalone)
+  const toggle = async () => {
+    setBusy(true); setMessage('')
+    try {
+      if (enabled) { await disablePush(); setEnabled(false); setMessage('Notificaciones desactivadas en este dispositivo.') }
+      else { await enablePush(userId); setEnabled(true); setMessage('Recibirás los avisos de Guadalupe en este dispositivo.') }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'No se han podido cambiar las notificaciones.') }
+    finally { setBusy(false) }
+  }
+  return <div className="panel push-settings"><div><h2><Bell size={19} /> Avisos en el móvil</h2><p>Recibe una notificación cuando Guadalupe te envíe un aviso, incluso con EndoTurnos cerrado.</p>{iphone && !standalone && <p>En iPhone: abre esta página en Safari, toca Compartir → Añadir a pantalla de inicio y entra desde el nuevo icono.</p>}{!pushAvailable() && <p>Este navegador no admite notificaciones push. Usa Safari en iPhone o Chrome en Android.</p>}{message && <p role="status" className="form-message">{message}</p>}</div><button className="soft-button" onClick={toggle} disabled={busy || !pushAvailable() || (iphone && !standalone)}>{busy ? 'Un momento…' : enabled ? 'Desactivar notificaciones' : 'Activar notificaciones'}</button></div>
+}
+
 function ProfileView({ coverageProfile, onCoverageChange, consultations, profile, demo, onUpdated, reload }: { coverageProfile?: CoverageProfile; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; consultations: Consultation[]; profile: Staff; demo: boolean; onUpdated: (key: MascotKey) => void; reload: () => void }) {
   const [personalTab, setPersonalTab] = useState<'coverage'|'mascot'>(profile.role==='professional'?'coverage':'mascot')
   const [mascot, setMascot] = useState<MascotKey>(profile.mascot_key)
@@ -513,7 +541,7 @@ function ProfileView({ coverageProfile, onCoverageChange, consultations, profile
     onUpdated(mascot); setSaved(true); window.setTimeout(() => setSaved(false), 2200)
   }
   const selected = MASCOTS.find(m => m.key === mascot) ?? MASCOTS[0]
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu espacio</span><h1>Mi ficha personal</h1><p>Tu mascota y las consultas que puedes cubrir.</p></div></div>{profile.role==='professional'&&<div className="segmented personal-tabs"><button className={personalTab==='coverage'?'active':''} onClick={()=>setPersonalTab('coverage')}>Mis consultas</button><button className={personalTab==='mascot'?'active':''} onClick={()=>setPersonalTab('mascot')}>Mi mascota</button></div>}{personalTab==='coverage'&&profile.role==='professional'?<CoveragePreferences person={profile} consultations={consultations} profile={coverageProfile} demo={demo} onChange={onCoverageChange} reload={reload}/>:<div className="profile-layout"><div className="panel profile-preview"><img src={selected.src} alt={selected.name} /><span>{selected.greeting}</span><h2>{profile.display_name}</h2><p>@{profile.username} · {profile.role === 'supervisor' ? 'Supervisora' : 'Profesional'}</p></div><div className="panel"><h2>Elige tu compañera</h2><MascotPicker value={mascot} onChange={setMascot} /><button className="primary" onClick={save}>{saved ? <><Check /> Guardado</> : 'Guardar mascota'}</button></div></div>}</section>
+  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu espacio</span><h1>Mi ficha personal</h1><p>Tu mascota y las consultas que puedes cubrir.</p></div></div>{profile.role === 'professional' && <PushSettings userId={profile.user_id} demo={demo} />}{profile.role==='professional'&&<div className="segmented personal-tabs"><button className={personalTab==='coverage'?'active':''} onClick={()=>setPersonalTab('coverage')}>Mis consultas</button><button className={personalTab==='mascot'?'active':''} onClick={()=>setPersonalTab('mascot')}>Mi mascota</button></div>}{personalTab==='coverage'&&profile.role==='professional'?<CoveragePreferences person={profile} consultations={consultations} profile={coverageProfile} demo={demo} onChange={onCoverageChange} reload={reload}/>:<div className="profile-layout"><div className="panel profile-preview"><img src={selected.src} alt={selected.name} /><span>{selected.greeting}</span><h2>{profile.display_name}</h2><p>@{profile.username} · {profile.role === 'supervisor' ? 'Supervisora' : 'Profesional'}</p></div><div className="panel"><h2>Elige tu compañera</h2><MascotPicker value={mascot} onChange={setMascot} /><button className="primary" onClick={save}>{saved ? <><Check /> Guardado</> : 'Guardar mascota'}</button></div></div>}</section>
 }
 
 function MascotPicker({ value, onChange, compact = false }: { value: MascotKey; onChange: (m: MascotKey) => void; compact?: boolean }) {
