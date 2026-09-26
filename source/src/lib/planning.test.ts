@@ -1,0 +1,17 @@
+import {describe,it,expect} from 'vitest'
+import {buildCopyPreview,findCoverageCandidates,selectedCopyConflicts} from './planning'
+import type {Assignment,Consultation,Staff,ShiftRequest} from '../types'
+const staff:Staff[]=['a','b','c'].map(id=>({id,user_id:null,display_name:id,username:id,role:'professional',mascot_key:'apple',active:true,weekly_minutes:2100}))
+const consultations:Consultation[]=[{id:'PLANTA',label:'Planta',short_label:'PL',color:'#123456',active:true},{id:'EN1',label:'EN1',short_label:'EN1',color:'#123456',active:true}]
+const a:Assignment={id:'a1',professional_id:'a',work_date:'2026-10-05',consultation_id:'PLANTA',start_time:'08:00',end_time:'15:00',provisional:false}
+const profiles=[{staff_id:'a',consultation_ids:['EN1','PLANTA']},{staff_id:'b',consultation_ids:['PLANTA']}]
+const request:ShiftRequest={id:'r',professional_id:'a',request_type:'vacation',date_from:'2026-10-19',date_to:'2026-10-19',details:'Ausencia',status:'approved',created_at:'2026-09-26'}
+describe('planning helpers',()=>{
+ it('orders compatible available people by their priority and excludes unconfigured staff',()=>{expect(findCoverageCandidates(a,staff,profiles,[],[],consultations).map(p=>[p.person.id,p.rank])).toEqual([['b',1],['a',2]])})
+ it('shows unavailable people after available ones with reasons',()=>{const rows=[{...a,id:'b1',professional_id:'b'}];const people=findCoverageCandidates({...a,id:undefined},staff,profiles,rows,[],consultations);expect(people[0].person.id).toBe('a');expect(people[1].conflicts).toHaveLength(1)})
+ it('copies relative dates and never changes source assignments',()=>{const preview=buildCopyPreview([a],consultations,[],profiles,staff,'2026-10-05','2026-10-11','2026-10-19');expect(preview[0].target.work_date).toBe('2026-10-19');expect(preview[0].blocked).toEqual([]);expect(a.work_date).toBe('2026-10-05')})
+ it('blocks holidays, approved absences and existing target assignments',()=>{expect(buildCopyPreview([a],consultations,[],profiles,staff,'2026-10-05','2026-10-11','2026-10-12')[0].blocked.join()).toContain('Festivo');expect(buildCopyPreview([a],consultations,[request],profiles,staff,'2026-10-05','2026-10-11','2026-10-19')[0].blocked.join()).toContain('aprobado');expect(buildCopyPreview([a,{...a,id:'a2',work_date:'2026-10-19'}],consultations,[],profiles,staff,'2026-10-05','2026-10-11','2026-10-19')[0].blocked.join()).toContain('Coincide')})
+ it('does not infer eligibility from previous shifts',()=>{expect(buildCopyPreview([a],consultations,[],[],staff,'2026-10-05','2026-10-11','2026-10-19')[0].review.join()).toContain('pendiente');expect(buildCopyPreview([a],consultations,[],[{staff_id:'a',consultation_ids:['EN1']}],staff,'2026-10-05','2026-10-11','2026-10-19')[0].blocked.join()).toContain('No puede cubrir')})
+ it('requires review for provisional or off-cadence copies',()=>{expect(buildCopyPreview([{...a,provisional:true}],consultations,[],profiles,staff,'2026-10-05','2026-10-11','2026-10-19')[0].review.join()).toContain('provisional');expect(buildCopyPreview([a],consultations,[],profiles,staff,'2026-10-05','2026-10-11','2026-10-18')[0].review.join()).toContain('cadencia')})
+ it('detects conflicts within the selection, even with an empty destination',()=>{const p=buildCopyPreview([a,{...a,id:'a2'}],consultations,[],profiles,staff,'2026-10-05','2026-10-11','2026-10-19');expect(selectedCopyConflicts(p)).toBe(true);expect(selectedCopyConflicts(p.slice(0,1))).toBe(false)})
+})
