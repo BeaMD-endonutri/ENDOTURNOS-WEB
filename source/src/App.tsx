@@ -8,10 +8,11 @@ import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
-import type { CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
+import type { RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
+import type { PublicationPreview } from './components/PublicationPanel'
 import ShiftEditor, { type AssignmentDraft, type ShiftSelection } from './components/ShiftEditor'
 import CalendarPanel from './components/CalendarPanel'
 import RequestsPanel from './components/RequestsPanel'
@@ -133,6 +134,8 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [staff, setStaff] = useState<Staff[]>(demo ? DEMO_STAFF : [])
   const [consultations, setConsultations] = useState<Consultation[]>(demo ? CONSULTATIONS : [])
   const [assignments, setAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
+  const [publishedAssignments, setPublishedAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
+  const [publications, setPublications] = useState<RotaPublication[]>([])
   const [requests, setRequests] = useState<ShiftRequest[]>([])
   const [tasks, setTasks] = useState<PersonalTask[]>([])
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
@@ -152,19 +155,24 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
 
   const loadData = useCallback(async () => {
     if (!supabase || demo || !session) return
-    const [s, c, a, r, t, b, h, cp] = await Promise.all([
-      supabase.from('et_staff').select('*').order('display_name'),
+    const s = await supabase.from('et_staff').select('*').order('display_name')
+    const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
+    const [c, a, r, t, b, h, cp, pub, published] = await Promise.all([
       supabase.from('et_consultations').select('*').eq('active', true).order('sort_order'),
-      supabase.from('et_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
+      supabase.from(supervisor ? 'et_assignments' : 'et_published_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
       supabase.from('et_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('et_tasks').select('*').order('task_date'),
       supabase.from('et_broadcasts').select('id,title,message,created_by,created_at,et_broadcast_recipients(staff_id,read_at)').order('created_at', { ascending: false }),
       supabase.from('et_assignment_history').select('*').order('changed_at', { ascending: false }).limit(100),
       supabase.from('et_staff_coverage').select('*'),
+      supabase.from('et_rota_publications').select('*'),
+      supabase.from('et_published_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
     ])
-    const failed = [s,c,a,r,t,b,h,cp].find(result => result.error)
+    const failed = [s,c,a,r,t,b,h,cp,pub,published].find(result => result.error)
     if (failed?.error) { setLoadError('No se han podido actualizar todos los datos. Pulsa Reintentar.'); return }
     setLoadError('')
+    setPublications((pub.data??[]) as RotaPublication[])
+    setPublishedAssignments((published.data??[]) as Assignment[])
     if (cp.data) setCoverageProfiles(cp.data as CoverageProfile[])
     if (h.data) setHistory(h.data as AssignmentHistory[])
     if (s.data) { setStaff(s.data as Staff[]); setProfile((s.data as Staff[]).find(p => p.user_id === session.user.id) ?? null) }
@@ -183,6 +191,8 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     const client = supabase
     const channel = client.channel('endoturnos-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, loadData)
@@ -252,6 +262,14 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(demo){const next=rows.map(r=>({...r.target,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(items=>[...items,...next]);next.forEach(a=>addHistory(null,a));return null}
     const {error}=await supabase!.rpc('et_copy_assignments',{p_rows:rows.map(r=>({source_id:r.source.id,source_updated_at:r.source.updated_at,target_date:r.target.work_date,accept_review:reviewed}))});if(error)return error.message;await loadData();return null
   }
+  const publishRota = async (month:string, preview:PublicationPreview):Promise<string|null> => {
+    if(demo){setPublishedAssignments(rows=>[...rows.filter(a=>!a.work_date.startsWith(month)),...assignments.filter(a=>a.work_date.startsWith(month))]);setPublications(rows=>[...rows.filter(p=>p.month!==month+'-01'),{month:month+'-01',published_at:new Date().toISOString(),version:(rows.find(p=>p.month===month+'-01')?.version??0)+1,initial_snapshot:false}]);return null}
+    const {data,error}=await supabase!.rpc('et_publish_rota',{p_month:month+'-01',p_fingerprint:preview.fingerprint})
+    if(error)throw new Error(error.message)
+    await loadData()
+    if(data?.broadcast_id){try {const {data:push,error:pushError}=await supabase!.functions.invoke('et-send-push',{body:{broadcastId:data.broadcast_id}});if(pushError||push?.error||push?.failed)return 'Cuadrante publicado y aviso guardado. Algunas notificaciones push no se han podido entregar.'} catch {return 'Cuadrante publicado y aviso guardado. No se ha podido confirmar la entrega de las notificaciones push.'}}
+    return null
+  }
   const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
   const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
 
@@ -267,8 +285,9 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       <Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />
       {isSupervisor && view !== 'home' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('home')} />}
       {unreadTotal > 0 && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 solicitud nueva' : `${unreadRequests} solicitudes nuevas`}</span><strong>Ver solicitudes</strong></button>}</div>}
+      {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??'2026-10-01')}>Revisar publicación</button></div>}
       {view === 'home' && isSupervisor && <SupervisorHome staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
-      {(view === 'calendar' || (view === 'home' && !isSupervisor)) && <CalendarPanel staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {(view === 'calendar' || (view === 'home' && !isSupervisor)) && <CalendarPanel demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}

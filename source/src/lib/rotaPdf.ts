@@ -3,7 +3,7 @@ import { addDays,endOfMonth,format,parseISO,startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { Assignment,Consultation,Staff } from '../types'
 import { HOLIDAYS } from '../data/constants'
-export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date=new Date()) {
+export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date=new Date(),publicationLabel='') {
  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});const margin=12;const width=396;const nameWidth=43;const dates:string[]=[]
  for(let d=startOfMonth(parseISO(month+'-01'));d<=endOfMonth(d)&&format(d,'yyyy-MM')===month;d=addDays(d,1))dates.push(format(d,'yyyy-MM-dd'))
  const cellWidth=(width-nameWidth)/dates.length;let y=34;let page=1
@@ -14,7 +14,7 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
  const naturalHeights=weights.map(weight=>Math.max(17,weight*11+4))
  const scale=Math.min(1,(gridBottom-48)/Math.max(1,naturalHeights.reduce((sum,height)=>sum+height,0)))
  const heading=()=>{doc.setFillColor('#245e46');doc.rect(0,0,420,23,'F');doc.setTextColor('#ffffff');doc.setFont('helvetica','bold');doc.setFontSize(19);doc.text(`EndoTurnos | ${format(parseISO(month+'-01'),'MMMM yyyy',{locale:es})}`,margin,14);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor('#496153');doc.text(`${staff.length===1?staff[0].display_name:'Cuadrante del equipo'} · Actualizado ${format(updatedAt,'dd/MM/yyyy HH:mm')}`,margin,29);y=34;doc.setFillColor('#e5eee5');doc.rect(margin,y,width,14,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('Profesional',margin+3,y+8);dates.forEach((date,i)=>{const x=margin+nameWidth+i*cellWidth;doc.setFontSize(7);doc.text(format(parseISO(date),'EEE',{locale:es}).slice(0,2),x+cellWidth/2,y+5,{align:'center'});doc.setFontSize(9);doc.text(date.slice(-2),x+cellWidth/2,y+10,{align:'center'})});y+=14}
- const footer=()=>{doc.setTextColor('#647368');doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(`Uso interno · Los cambios posteriores no aparecen en esta copia.`,margin,288);doc.text(`Página ${page}`,408,288,{align:'right'})}
+ const footer=()=>{doc.setTextColor('#647368');doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(`${publicationLabel ? publicationLabel+' · ' : ''}Uso interno · Los cambios posteriores no aparecen en esta copia.`,margin,288);doc.text(`Página ${page}`,408,288,{align:'right'})}
  heading()
  for(const [rowIndex,person] of staff.entries()){const perDay=rows[rowIndex];const maxRows=weights[rowIndex];const rowHeight=naturalHeights[rowIndex]*scale
  doc.setDrawColor('#d6e0d5');doc.setLineWidth(.2);doc.setFillColor('#f2f6ef');doc.rect(margin,y,nameWidth,rowHeight,'FD');doc.setTextColor('#254c37');doc.setFont('helvetica','bold');doc.setFontSize(8);const names=doc.splitTextToSize(person.display_name,nameWidth-5);doc.text(names,margin+2,y+6);if(person.weekly_minutes<2100){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text('Reducción 1/3',margin+2,y+rowHeight-3)}
@@ -24,4 +24,4 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
  doc.setFontSize(8);doc.text('* Turno provisional. Fondo salmón: festivo. Las celdas vacías indican ausencia de asignación.',margin,281);footer()
  return doc
 }
-export function downloadRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date){createRotaPdf(month,staff,assignments,consultations,updatedAt).save(`EndoTurnos_${month}_${staff.length===1?'individual':'equipo'}.pdf`)}
+export function downloadRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date,publicationLabel=''){createRotaPdf(month,staff,assignments,consultations,updatedAt).save(`EndoTurnos_${month}_${staff.length===1?'individual':'equipo'}.pdf`)}

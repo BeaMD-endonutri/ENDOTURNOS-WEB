@@ -106,3 +106,10 @@ export interface CoverageProfile {
   consultation_ids: string[]
   updated_at?: string
 }
+
+export interface RotaPublication {
+ month: string
+ published_at: string
+ version: number
+ initial_snapshot: boolean
+}
