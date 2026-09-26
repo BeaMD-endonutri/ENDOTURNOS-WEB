@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/publish.yml"
       - "source/src/**"
+      - "source/.env.production"
   workflow_dispatch:
 
 permissions:
