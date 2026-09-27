@@ -6,8 +6,13 @@ import { getPlanning } from './planningConfig'
 
 type ShiftBand = 'morning' | 'afternoon'
 
+const overlapsBand = (start: string, end: string, bandStart: string, bandEnd: string) =>
+  start.slice(0,5) < bandEnd && end.slice(0,5) > bandStart
+
 const isInBand = (assignment: Assignment, band: ShiftBand) =>
-  band === 'morning' ? assignment.start_time < '15:00' : assignment.start_time >= '15:00'
+  band === 'morning'
+    ? overlapsBand(assignment.start_time, assignment.end_time, '08:00', '15:00')
+    : overlapsBand(assignment.start_time, assignment.end_time, '15:00', '20:00')
 
 export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date=new Date(),publicationLabel='') {
  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'})

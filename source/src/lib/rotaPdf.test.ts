@@ -17,3 +17,20 @@ it('keeps a full team month on a single landscape sheet without per-assignment t
   expect(output).not.toContain('08:00-15:00')
   expect(output).not.toContain('15:00-20:00')
 })
+
+
+it('shows an 08:00–20:00 assignment in both morning and afternoon PDF bands', () => {
+  const staff = [DEMO_STAFF[0]]
+  const assignment = {
+    ...buildDemoSchedule()[0],
+    professional_id: staff[0].id,
+    work_date: '2026-10-06',
+    consultation_id: 'NUTRICION',
+    start_time: '08:00',
+    end_time: '20:00',
+  }
+  const pdf = createRotaPdf('2026-10', staff, [assignment], CONSULTATIONS)
+  const output = pdf.output()
+  const matches = output.match(/NUT/g) ?? []
+  expect(matches.length).toBeGreaterThanOrEqual(2)
+})
