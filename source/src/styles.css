@@ -513,3 +513,26 @@ button:disabled {cursor:not-allowed;opacity:.55;}
  .coverage-candidate .primary { width:100%;justify-content:center; }
  .coverage-context .text-button { min-height:44px; }
 }
+
+.absence-impact { margin:15px 0;padding:14px;background:#f4f6ec;border:1px solid #dce3ce;border-radius:12px; }
+.absence-impact-heading { display:flex;align-items:center;gap:8px;font-size:14px;color:#4b6038; }
+.absence-impact p { font-size:13px;line-height:1.6;margin:10px 0; }
+.absence-impact-summary { display:flex;flex-wrap:wrap;gap:6px; }
+.absence-impact-summary span { padding:4px 8px;background:#e8eddc;color:#465932;border-radius:8px;font-size:12px; }
+.absence-impact details summary { cursor:pointer;font-size:13px;font-weight:600;padding:13px 0;min-height:44px; }
+.absence-shift-list { display:grid;gap:8px; }
+.absence-shift-list article { display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;background:#fffdf9;border:1px solid #e0e6d6;border-radius:9px; }
+.absence-shift-list article > div { flex:1;min-width:0; }
+.absence-shift-list strong { display:block;font-size:13px;overflow-wrap:anywhere; }
+.absence-shift-list small { display:block;font-size:12px;color:#5d6a55;margin-top:5px; }
+.absence-shift-list button { min-height:44px;font-size:12px; }
+.absence-published-status { border-top:1px solid #dce3ce;padding-top:10px;color:#67562d; }
+.absence-resolved { display:flex;gap:7px;align-items:flex-start;color:#35613d; }
+.absence-resolved svg { flex-shrink:0;margin-top:3px; }
+.absence-month-links { display:flex;flex-wrap:wrap;gap:8px; }
+.absence-month-links button { min-height:44px;font-size:12px; }
+.absence-impact-warning { background:#fff0d8;color:#775315;padding:10px;border-radius:8px; }
+@media(max-width:640px) {
+ .absence-shift-list article { flex-direction:column;align-items:stretch; }
+ .absence-shift-list button { justify-content:center; }
+}
