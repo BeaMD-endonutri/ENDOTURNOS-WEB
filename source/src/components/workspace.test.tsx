@@ -49,4 +49,17 @@ describe('workspace interactions',()=>{
   expect(host.querySelector('.exception-register')!.textContent).toContain('Retirada')
  })
 
+ it('extends the period into the next year, persists a holiday and opens its month',async()=>{
+  await enter();await click('Configuración')
+  await change(label('Último mes') as HTMLInputElement,'2027-02')
+  await change(label('Fecha del festivo') as HTMLInputElement,'2027-01-06')
+  await change(label('Nombre del festivo') as HTMLInputElement,'Festivo de prueba')
+  await click('Añadir festivo');await act(async()=>host.querySelector('form.planning-settings')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  expect(host.textContent).toContain('Periodo y festivos guardados')
+  await click('Cuadrante');const month=host.querySelector<HTMLInputElement>('[aria-label="Elegir mes"]')!;expect(month.max).toBe('2027-02')
+  await change(month,'2027-01');expect(host.querySelectorAll('.day-head')).toHaveLength(31);expect(host.textContent).toContain('Sin reglas vigentes este mes')
+  expect(host.querySelector('.day-head[title*="Festivo de prueba"]')).not.toBeNull()
+  await click('Configuración');expect((label('Último mes') as HTMLInputElement).value).toBe('2027-02');expect(host.textContent).toContain('Festivo de prueba')
+ })
+
 })

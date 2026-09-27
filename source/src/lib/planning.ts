@@ -1,12 +1,12 @@
 import { addDays, differenceInCalendarDays, differenceInCalendarWeeks, format, getDay, parseISO } from 'date-fns'
 import type { Assignment, Consultation, CoverageProfile, ShiftRequest, Staff } from '../types'
-import { HOLIDAYS } from '../data/constants'
+import { getPlanning } from './planningConfig'
 import { assignmentConflicts, defaultCoverageRules, overlaps } from './scheduling'
 export interface CopyPreviewRow { source: Assignment; target: Assignment; blocked: string[]; review: string[] }
 export function copyRuleCheck(c:Consultation|undefined,date:string,start:string,end:string,consultations:Consultation[]) {
  const blocked:string[]=[];const review:string[]=[]
- if(date<'2026-10-01'||date>'2026-12-31')blocked.push('Fuera del trimestre disponible')
- if(HOLIDAYS[date])blocked.push(`Festivo: ${HOLIDAYS[date]}`)
+ if(date<getPlanning().start_date||date>getPlanning().end_date)blocked.push('Fuera del periodo disponible')
+ if(getPlanning().holidays[date])blocked.push(`Festivo: ${getPlanning().holidays[date]}`)
  if(!c?.active){blocked.push('Consulta no activa');return {blocked,review}}
  const rules=consultations.filter(x=>x.active).flatMap(x=>(x.coverage_rules??defaultCoverageRules(x.id)).filter(r=>x.id===c.id||r.alternatives?.includes(c.id)))
  const matches=rules.filter(r=>date>=r.valid_from&&date<=r.valid_until&&r.weekdays.includes(getDay(parseISO(date)))&&start.slice(0,5)===r.start_time&&end.slice(0,5)===r.end_time&&(r.monthly||differenceInCalendarWeeks(parseISO(date),parseISO(r.anchor_date),{weekStartsOn:1})%r.every_weeks===0))

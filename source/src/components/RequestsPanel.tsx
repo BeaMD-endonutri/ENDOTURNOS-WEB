@@ -1,3 +1,4 @@
+import { usePlanning, clampDate } from '../lib/planningConfig'
 import { useEffect, useRef, useState } from 'react'
 import { Bell, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
@@ -7,11 +8,12 @@ import AbsenceImpact, { isAbsenceRequest } from './AbsenceImpact'
 import { supabase } from '../lib/supabase'
 const labels: Record<RequestType,string>={vacation:'Vacaciones',permission:'Permiso',swap:'Cambio con una compañera',preference:'Día u horario preferente',correction:'Corrección de una asignación'}
 export default function RequestsPanel({requests,unreadIds,staff,profile,isSupervisor,demo,onChange,reload,assignments,focusId,consultations=[],publishedAssignments=[],onReassign,onCalendar}:{requests:ShiftRequest[];unreadIds:string[];staff:Staff[];profile:Staff;isSupervisor:boolean;demo:boolean;onChange:React.Dispatch<React.SetStateAction<ShiftRequest[]>>;reload:()=>void;assignments:Assignment[];focusId:string|null;consultations?:Consultation[];publishedAssignments?:Assignment[];onReassign?:(assignment:Assignment)=>void;onCalendar?:(date:string)=>void}) {
+ const planning=usePlanning(); const {start_date:ROTA_START,end_date:ROTA_END,holidays:HOLIDAYS}=planning
  const [tab,setTab]=useState<'received'|'sent'|'all'>(unreadIds.length ? 'all' : 'received')
  const [statusFilter,setStatusFilter]=useState('all')
  const [showForm,setShowForm]=useState(false)
  const [type,setType]=useState<RequestType>('vacation')
- const [from,setFrom]=useState('2026-10-01');const [to,setTo]=useState('2026-10-01')
+ const [from,setFrom]=useState(()=>clampDate(format(new Date(),'yyyy-MM-dd')));const [to,setTo]=useState(()=>clampDate(format(new Date(),'yyyy-MM-dd')))
  const [details,setDetails]=useState('');const [recipient,setRecipient]=useState('')
  const [editing,setEditing]=useState<string|null>(null)
  const [feedback,setFeedback]=useState('');const [busy,setBusy]=useState(false)

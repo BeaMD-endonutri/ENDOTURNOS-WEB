@@ -1,12 +1,14 @@
+import { usePlanning } from '../lib/planningConfig'
 import { useMemo,useState } from 'react'
 import { addDays,format,parseISO,startOfWeek,differenceInCalendarDays } from 'date-fns'
 import { Copy,X } from 'lucide-react'
 import type { Assignment,Consultation,CoverageProfile,ShiftRequest,Staff } from '../types'
 import { buildCopyPreview,selectedCopyConflicts,type CopyPreviewRow } from '../lib/planning'
 export default function CopySchedule({month,assignments,consultations,profiles,requests,staff,onClose,onCopy}:{month:string;assignments:Assignment[];consultations:Consultation[];profiles:CoverageProfile[];requests:ShiftRequest[];staff:Staff[];onClose:()=>void;onCopy:(rows:CopyPreviewRow[],reviewed:boolean)=>Promise<string|null>}){
+ const planning=usePlanning(); const {start_date:ROTA_START,end_date:ROTA_END,holidays:HOLIDAYS}=planning
  const initial=startOfWeek(parseISO(month+'-01'),{weekStartsOn:1})
  const [from,setFrom]=useState(format(initial,'yyyy-MM-dd'));const [to,setTo]=useState(format(addDays(initial,6),'yyyy-MM-dd'));const [target,setTarget]=useState(format(addDays(initial,7),'yyyy-MM-dd'));const [person,setPerson]=useState('all');const [excluded,setExcluded]=useState<string[]>([]);const [reviewed,setReviewed]=useState(false);const [busy,setBusy]=useState(false);const [message,setMessage]=useState('');const [done,setDone]=useState(false)
- const preview=useMemo(()=>buildCopyPreview(assignments,consultations,requests,profiles,staff,from,to,target,person),[assignments,consultations,requests,profiles,staff,from,to,target,person])
+ const preview=useMemo(()=>buildCopyPreview(assignments,consultations,requests,profiles,staff,from,to,target,person),[assignments,consultations,requests,profiles,staff,from,to,target,person,planning])
  const selected=preview.filter(r=>!r.blocked.length&&!excluded.includes(r.source.id));const needsReview=selected.some(r=>r.review.length);const clash=selectedCopyConflicts(selected);const rangeInvalid=to<from||differenceInCalendarDays(parseISO(to),parseISO(from))>30
  const reset=()=>{setExcluded([]);setReviewed(false);setMessage('')}
  const submit=async()=>{setBusy(true);setMessage('');const count=selected.length;const error=await onCopy(selected,reviewed);setBusy(false);if(error){setMessage(error);return}setDone(true);setMessage(`${count} turnos copiados. Puedes revisar el destino en el cuadrante y recuperar los cambios en Historial.`)}

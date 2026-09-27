@@ -1,9 +1,11 @@
+import { getPlanning, usePlanning, setPlanning, DEFAULT_PLANNING, clampDate, type PlanningConfig } from './lib/planningConfig'
+import PlanningSettings from './components/PlanningSettings'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { addDays, addMonths, endOfMonth, format, getDay, isSameDay, parseISO, startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Settings, Stethoscope, Home, History, AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, Clock3, LogOut, Megaphone, Menu, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, Volume2, X } from 'lucide-react'
-import { CONSULTATIONS, DEMO_STAFF, HOLIDAYS, MASCOTS } from './data/constants'
+import { CONSULTATIONS, DEMO_STAFF, MASCOTS } from './data/constants'
 import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, sameCoverageRule, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -134,6 +136,9 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
 }
 
 function Workspace({ session, demo, onExitDemo }: { session: Session | null; demo: boolean; onExitDemo: () => void }) {
+  const planning=usePlanning()
+  const loadSequence=useRef(0)
+  useEffect(()=>{if(demo)setPlanning(DEFAULT_PLANNING)},[demo])
   const [currentDay,setCurrentDay]=useState(()=>format(new Date(),'yyyy-MM-dd'))
   useEffect(()=>{const refresh=()=>setCurrentDay(format(new Date(),'yyyy-MM-dd'));const timer=window.setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',refresh)}},[])
   const [staff, setStaff] = useState<Staff[]>(demo ? DEMO_STAFF : [])
@@ -162,23 +167,32 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
 
   const loadData = useCallback(async () => {
     if (!supabase || demo || !session) return
+    const sequence=++loadSequence.current
     const s = await supabase.from('et_staff').select('*').order('display_name')
+    if(s.error){setLoadError('No se han podido cargar los datos. Pulsa Reintentar.');return}
+    if(!s.data?.some(p=>p.user_id===session.user.id)){setProfile(null);setDataLoaded(true);return}
+    const configResult=await supabase.from('et_planning_settings').select('*').eq('id',1).single()
+    if(configResult.error||!configResult.data){setLoadError('No se ha podido cargar el periodo de planificación. Pulsa Reintentar.');return}
+    const config=configResult.data as PlanningConfig
+    const readAssignments=async(table:string)=>{const rows:Assignment[]=[];for(let offset=0;;offset+=500){const result=await supabase!.from(table).select('*').gte('work_date',config.start_date).lte('work_date',config.end_date).order('id').range(offset,offset+499);if(result.error)return {data:null,error:result.error};rows.push(...result.data as Assignment[]);if(result.data.length<500)return {data:rows,error:null}}}
     const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
     const [c, a, r, t, b, h, cp, pub, published, exceptions] = await Promise.all([
       supabase.from('et_consultations').select('*').eq('active', true).order('sort_order'),
-      supabase.from(supervisor ? 'et_assignments' : 'et_published_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
+      readAssignments(supervisor ? 'et_assignments' : 'et_published_assignments'),
       supabase.from('et_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('et_tasks').select('*').order('task_date'),
       supabase.from('et_broadcasts').select('id,title,message,created_by,created_at,et_broadcast_recipients(staff_id,read_at)').order('created_at', { ascending: false }),
       supabase.from('et_assignment_history').select('*').order('changed_at', { ascending: false }).limit(100),
       supabase.from('et_staff_coverage').select('*'),
       supabase.from('et_rota_publications').select('*'),
-      supabase.from('et_published_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
+      readAssignments('et_published_assignments'),
       supervisor ? supabase.from('et_coverage_exceptions').select('*').order('created_at',{ascending:false}) : Promise.resolve({data:[],error:null}),
     ])
+    if(sequence!==loadSequence.current)return
     const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions].find(result => result.error)
     if (failed?.error) { setLoadError('No se han podido actualizar todos los datos. Pulsa Reintentar.'); return }
     setLoadError('')
+    setPlanning(config)
     setCoverageExceptions((exceptions.data??[]) as CoverageException[])
     setPublications((pub.data??[]) as RotaPublication[])
     setPublishedAssignments((published.data??[]) as Assignment[])
@@ -203,6 +217,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, loadData)
@@ -296,8 +311,15 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(!data?.length){await loadData();return 'La excepción ya ha cambiado. Se han actualizado los datos.'}
     setCoverageExceptions(rows=>rows.map(e=>e.id===id?data[0] as CoverageException:e));await loadData();return null
   }
+  const savePlanning=async(next:PlanningConfig):Promise<string|null>=>{
+    if(demo){setPlanning({...next,updated_at:new Date().toISOString()});setCalendarFocusDate(null);setShiftSelection(null);return null}
+    const {data,error}=await supabase!.from('et_planning_settings').update({start_date:next.start_date,end_date:next.end_date,holidays:next.holidays}).eq('id',1).eq('updated_at',next.updated_at).select('*')
+    if(error)return error.message
+    if(!data?.length)return 'La configuración ha cambiado en otra sesión. Pulsa Recargar configuración antes de guardar.'
+    setCalendarFocusDate(null);setShiftSelection(null);setExceptionIssue(null);await loadData();return null
+  }
   const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
-  const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
+  const openCalendar = (date:string) => {setCalendarFocusDate(clampDate(date));setView('calendar')}
   const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
 
   return <div className="app-shell">
@@ -313,10 +335,10 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
       {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
       {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
-      {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??'2026-10-01')}>Revisar publicación</button></div>}
+      {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??planning.start_date)}>Revisar publicación</button></div>}
       {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
       {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
-      {view === 'calendar' && <CalendarPanel onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'calendar' && <CalendarPanel onConsultations={()=>setView('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
       {view === 'incidents' && isSupervisor && <CoverageIssuesPanel onException={setExceptionIssue} exceptions={coverageExceptions} onRevoke={revokeCoverageException} issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
       {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
@@ -327,7 +349,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={loadData} />}
       {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={loadData} />}
       {view === 'consultations' && isSupervisor && <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Consultas</h1><p>Gestiona horarios, profesionales necesarios y periodos de suspensión de cada consulta.</p></div></div><ConsultationManager consultations={consultations} demo={demo} onChange={setConsultations} reload={loadData} /></section>}
-      {view === 'settings' && isSupervisor && <SettingsView onNavigate={setView} />}
+      {view === 'settings' && isSupervisor && <SettingsView onNavigate={setView} onSave={savePlanning} />}
       {view === 'profile' && <ProfileView coverageProfile={coverageProfiles.find(p=>p.staff_id===activeProfile.id)} onCoverageChange={setCoverageProfiles} consultations={consultations} profile={activeProfile} demo={demo} onUpdated={(key) => { setProfile(p => p ? { ...p, mascot_key: key } : p); setStaff(p => p.map(s => s.id === activeProfile.id ? { ...s, mascot_key: key } : s)) }} reload={loadData} />}
     </main>
     <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
@@ -564,12 +586,12 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
   </section>
 }
 
-function SettingsView({onNavigate}:{onNavigate:(view:View)=>void}) {
+function SettingsView({onNavigate,onSave}:{onNavigate:(view:View)=>void;onSave:(config:PlanningConfig)=>Promise<string|null>}) {
   return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Configuración</h1><p>Consulta las condiciones actuales de planificación y accede a los ajustes de tu perfil.</p></div></div>
     <div className="settings-grid">
-      <section className="panel"><h2><CalendarDays size={20}/> Periodo de planificación</h2><p className="settings-period">Octubre – diciembre de 2026</p><p className="helper">Periodo disponible actualmente en el cuadrante. Se muestra como información; no se puede modificar desde esta pantalla.</p><button className="soft-button" onClick={()=>onNavigate('calendar')}>Abrir cuadrante</button></section>
+      <PlanningSettings onSave={onSave}/>
       <section className="panel"><h2><Check size={20}/> Publicación del cuadrante</h2><p>Los cambios se guardan en borrador. El equipo ve la última versión publicada de cada mes.</p><p className="helper">Revisa la cobertura y publica desde el cuadrante cuando esté listo.</p><button className="soft-button" onClick={()=>onNavigate('history')}>Ver historial de cambios</button></section>
-      <section className="panel settings-holidays"><h2><CalendarDays size={20}/> Festivos contemplados</h2><p className="helper">Fechas que el cuadrante excluye de la cobertura habitual. Listado de consulta, sin edición en esta pantalla.</p><ul>{Object.entries(HOLIDAYS).sort(([a],[b])=>a.localeCompare(b)).map(([date,name])=><li key={date}><time dateTime={date}>{format(parseISO(date),'d MMMM',{locale:es})}</time><span>{name}</span></li>)}</ul></section>
+
       <section className="panel"><h2><Settings size={20}/> Otros ajustes</h2><div className="settings-shortcuts"><div><strong>Horarios y cobertura</strong><p>Las reglas, cadencias y suspensiones están en Consultas.</p><button className="soft-button" onClick={()=>onNavigate('consultations')}>Gestionar consultas</button></div><div><strong>Tu ficha personal</strong><p>Consulta tu perfil y cambia tu mascota.</p><button className="soft-button" onClick={()=>onNavigate('profile')}>Abrir mi ficha</button></div></div></section>
     </div>
   </section>

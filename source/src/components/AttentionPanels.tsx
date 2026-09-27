@@ -1,3 +1,4 @@
+import { planningMonths, usePlanning } from '../lib/planningConfig'
 import { ExceptionRegister } from './CoverageExceptions'
 import type { CoverageException } from '../types'
 import { useState } from 'react'
@@ -21,10 +22,11 @@ export function NotificationsPanel({broadcasts,requests,onBroadcasts,onRequest}:
 }
 
 export function CoverageIssuesPanel({issues,onAssign,onCalendar,onException,exceptions=[],onRevoke}:{onException?:(issue:CoverageIssue)=>void;exceptions?:CoverageException[];onRevoke?:(id:string)=>Promise<string|null>;issues:CoverageIssue[];onAssign:(selection:ShiftSelection)=>void;onCalendar:(date:string)=>void}) {
+ usePlanning()
  const [month,setMonth]=useState('all')
  const [severity,setSeverity]=useState('all')
  const [limit,setLimit]=useState(20)
- const months=[...new Set(issues.map(i=>i.date.slice(0,7)))].sort()
+ const months=planningMonths()
  const filtered=issues.filter(i=>(month==='all'||i.date.startsWith(month))&&(severity==='all'||i.severity===severity))
  return <section className="content-section coverage-issues-page"><div className="section-heading"><div><span className="eyebrow">Planificación en borrador</span><h1>Incidencias de cobertura</h1><p>{issues.length} incidencias en el periodo disponible. Se actualizan al corregir los turnos o las reglas de cobertura.</p></div></div>
   <div className="panel"><div className="attention-filters"><label>Mes<select value={month} onChange={e=>{setMonth(e.target.value);setLimit(20)}}><option value="all">Todo el periodo</option>{months.map(m=><option key={m} value={m}>{format(parseISO(m+'-01'),'MMMM yyyy',{locale:es})}</option>)}</select></label><label>Tipo de incidencia<select value={severity} onChange={e=>{setSeverity(e.target.value);setLimit(20)}}><option value="all">Todas</option><option value="critical">Sin cobertura</option><option value="warning">Cobertura insuficiente o turnos suspendidos</option></select></label></div>

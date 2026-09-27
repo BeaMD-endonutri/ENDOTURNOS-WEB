@@ -1,15 +1,16 @@
+import { usePlanning, periodLabel } from '../lib/planningConfig'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Bell, CalendarDays, ChevronRight, Clock3 } from 'lucide-react'
 import { MASCOTS } from '../data/constants'
 import type { Assignment, Consultation, ShiftRequest, Staff, TeamBroadcast } from '../types'
-import { ROTA_START, ROTA_END } from './AgendaView'
 
 const requestLabels = {vacation:'Vacaciones',permission:'Permiso',swap:'Cambio de turno',preference:'Preferencia',correction:'Corrección'}
 export default function ProfessionalHome({profile,publishedAssignments,consultations,requests,broadcasts,today,onCalendar,onBroadcasts,onRequest}:{
  profile:Staff;publishedAssignments:Assignment[];consultations:Consultation[];requests:ShiftRequest[];broadcasts:TeamBroadcast[];today:string
  onCalendar:(date:string)=>void;onBroadcasts:()=>void;onRequest:(id?:string)=>void
 }) {
+ const planning=usePlanning(); const {start_date:ROTA_START,end_date:ROTA_END,holidays:HOLIDAYS}=planning
  const mascot=MASCOTS.find(m=>m.key===profile.mascot_key)??MASCOTS[0]
  const mine=publishedAssignments.filter(a=>a.professional_id===profile.id).sort((a,b)=>a.work_date.localeCompare(b.work_date)||a.start_time.localeCompare(b.start_time)||a.id.localeCompare(b.id))
  const todayShifts=mine.filter(a=>a.work_date===today)
@@ -30,7 +31,7 @@ export default function ProfessionalHome({profile,publishedAssignments,consultat
   <div className="personal-greeting"><img src={mascot.src} alt=""/><div><span className="eyebrow">Tu día, de un vistazo</span><h1>Hola, {profile.display_name.split(' ')[0].toLocaleLowerCase('es').replace(/^./,s=>s.toUpperCase())}</h1><p>{format(parseISO(today),"EEEE d 'de' MMMM",{locale:es})}</p></div></div>
   <section className="panel personal-today" aria-labelledby="personal-today-title"><div className="section-heading"><div><h2 id="personal-today-title">Hoy</h2><p>Tu planificación publicada</p></div><button className="primary" onClick={()=>onCalendar(calendarDate)}><CalendarDays size={18}/> Mi cuadrante</button></div>
    {absences.map(r=><button className="personal-absence" key={r.id} onClick={()=>onRequest(r.id)}>{r.request_type==='vacation'?'Vacaciones aprobadas':'Permiso aprobado'} · Ver solicitud<ChevronRight size={16}/></button>)}
-   {todayShifts.length>0?<div className="personal-shifts">{todayShifts.map(shift)}</div>:<p className="personal-empty">{!inPeriod?'Hoy está fuera del periodo disponible: octubre–diciembre de 2026.':absences.length?'No tienes turnos publicados para hoy.':'No tienes turnos asignados hoy en la versión publicada.'}</p>}
+   {todayShifts.length>0?<div className="personal-shifts">{todayShifts.map(shift)}</div>:<p className="personal-empty">{!inPeriod?`Hoy está fuera del periodo disponible: ${periodLabel()}.`:absences.length?'No tienes turnos publicados para hoy.':'No tienes turnos asignados hoy en la versión publicada.'}</p>}
    {absences.length>0&&todayShifts.length>0&&<p className="form-message">Tu ausencia está aprobada, pero estos turnos siguen en el cuadrante publicado. Consulta con la supervisora.</p>}
   </section>
   <div className="personal-home-grid">
