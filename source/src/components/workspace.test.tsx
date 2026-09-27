@@ -21,4 +21,16 @@ describe('workspace interactions',()=>{
  it('saves and reorders a professional coverage profile from the team card',async()=>{await enter();await click('Equipo');await click('Ver ficha personal');await choose(label('Añadir consulta') as HTMLSelectElement,'EN1');await click('Añadir');await choose(label('Añadir consulta') as HTMLSelectElement,'NUTRICION');await click('Añadir');await choose(label('Añadir consulta') as HTMLSelectElement,'PLANTA');await click('Añadir');await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Subir PLANTA"]')!.click());await click('Guardar orden de consultas');expect([...host.querySelectorAll('.preference-list li strong')].map(e=>e.textContent)).toEqual(['EN1','Planta','Nutrición']);expect(host.textContent).toContain('Lista de consultas guardada.')})
  it('opens the absence calendar and copy preview from the rota',async()=>{await enter();await click('Cuadrante');await click('Ver ausencias');expect(host.querySelectorAll('.absence-day')).toHaveLength(31);await click('Volver al cuadrante');await click('Copiar semana o selección');expect(host.querySelector('[aria-label="Copiar turnos"]')).not.toBeNull();expect(host.textContent).toContain('bloqueados');expect(host.textContent).toContain('confirma la cadencia')})
 
+ it('keeps coverage counts out of notifications and routes each header action separately',async()=>{
+  await enter()
+  const notifications=host.querySelector<HTMLButtonElement>('.attention-button.messages')!
+  const coverage=host.querySelector<HTMLButtonElement>('.attention-button.coverage')!
+  expect(notifications.getAttribute('aria-label')).toBe('Notificaciones: 0 sin leer')
+  expect(notifications.querySelector('b')).toBeNull()
+  expect(Number(coverage.querySelector('b')!.textContent)).toBeGreaterThan(0)
+  await act(async()=>notifications.click());expect(host.querySelector('.notifications-page')).not.toBeNull();expect(host.querySelector('.coverage-issues-page')).toBeNull();expect(host.textContent).toContain('No tienes notificaciones sin leer')
+  await act(async()=>coverage.click());expect(host.querySelector('.coverage-issues-page')).not.toBeNull();expect(host.querySelector('.notifications-page')).toBeNull()
+  await click('Buscar cobertura');expect(host.querySelector('[aria-label="Cerrar panel"]')).not.toBeNull()
+ })
+
 })

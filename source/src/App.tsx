@@ -13,6 +13,7 @@ import type { RotaPublication, CoverageProfile, AssignmentHistory, Assignment, C
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
 import ProfessionalHome from './components/ProfessionalHome'
+import { NotificationsPanel, CoverageIssuesPanel } from './components/AttentionPanels'
 import type { PublicationPreview } from './components/PublicationPanel'
 import ShiftEditor, { type AssignmentDraft, type ShiftSelection } from './components/ShiftEditor'
 import CalendarPanel from './components/CalendarPanel'
@@ -21,7 +22,7 @@ import HistoryPanel from './components/HistoryPanel'
 import CoveragePreferences from './components/CoveragePreferences'
 import type { CopyPreviewRow } from './lib/planning'
 
-type View = 'home' | 'history' | 'calendar' | 'broadcasts' | 'requests' | 'tasks' | 'team' | 'consultations' | 'settings' | 'profile'
+type View = 'home' | 'history' | 'calendar' | 'broadcasts' | 'requests' | 'tasks' | 'team' | 'consultations' | 'settings' | 'notifications' | 'incidents' | 'profile'
 const todayIso = format(new Date(), 'yyyy-MM-dd')
 const REQUEST_LABELS: Record<RequestType, string> = {
   vacation: 'Vacaciones', permission: 'Permiso', swap: 'Cambio con una compañera',
@@ -241,7 +242,6 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const unreadRequests = requestNotificationIds.length
   const unreadTotal = unreadBroadcasts + unreadRequests
   const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests) : []
-  const topNotificationTotal = unreadTotal + coverageIssues.length
   const nav = [
     ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['profile', CircleUserRound, 'Mi ficha'],
@@ -286,14 +286,16 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
     <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'?'calendar-screen':''}`}>
       {loadError && <div role="alert" className="form-message">{loadError}<button className="soft-button" onClick={loadData}>Reintentar</button></div>}
-      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="icon-button notification-button" title="Notificaciones" onClick={() => { if (isSupervisor) { setView('home') } else setView(unreadRequests > 0 && unreadBroadcasts === 0 ? 'requests' : 'broadcasts') }}><Bell size={19} />{topNotificationTotal > 0 && <b>{topNotificationTotal}</b>}</button><button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
+      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="attention-button messages" aria-label={`Notificaciones: ${unreadTotal} sin leer`} aria-current={view==='notifications'?'page':undefined} onClick={()=>setView('notifications')}><Bell size={19}/><span>Notificaciones</span>{unreadTotal>0&&<b>{unreadTotal}</b>}</button>{isSupervisor&&<button className="attention-button coverage" aria-label={`Cobertura: ${coverageIssues.length} incidencias`} aria-current={view==='incidents'?'page':undefined} onClick={()=>setView('incidents')}><AlertTriangle size={19}/><span>Cobertura</span><b>{coverageIssues.length}</b></button>}<button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
       {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
-      {isSupervisor && view !== 'home' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('home')} />}
-      {unreadTotal > 0 && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 solicitud nueva' : `${unreadRequests} solicitudes nuevas`}</span><strong>Ver solicitudes</strong></button>}</div>}
+      {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
+      {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
       {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??'2026-10-01')}>Revisar publicación</button></div>}
       {view === 'home' && isSupervisor && <SupervisorHome staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
       {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
       {view === 'calendar' && <CalendarPanel demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
+      {view === 'incidents' && isSupervisor && <CoverageIssuesPanel issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
       {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
@@ -320,7 +322,7 @@ function Welcome({ profile, mascot, todayAssignments, consultations, onAddTask }
 function CoverageAlert({ issues, onOpen }: { issues: CoverageIssue[]; onOpen: (date: string) => void }) {
   const critical = issues.filter(issue => issue.severity === 'critical').length
   const first = issues[0]
-  return <button className="coverage-banner" onClick={() => onOpen(first.date)}><span className="coverage-banner-icon"><AlertTriangle size={20} /></span><span><strong>{issues.length} {issues.length === 1 ? 'incidencia de cobertura' : 'incidencias de cobertura'}</strong><small>{critical ? `${critical} consultas sin cubrir. ` : ''}{first.title} · {format(parseISO(first.date), 'd MMM', { locale: es })}</small></span><b>Ver pendientes</b></button>
+  return <button className="coverage-banner" onClick={() => onOpen(first.date)}><span className="coverage-banner-icon"><AlertTriangle size={20} /></span><span><strong>{issues.length} {issues.length === 1 ? 'incidencia de cobertura' : 'incidencias de cobertura'}</strong><small>{critical ? `${critical} consultas sin cubrir. ` : ''}{first.title} · {format(parseISO(first.date), 'd MMM', { locale: es })}</small></span><b>Ver cobertura</b></button>
 }
 
 function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChange, reload }: { broadcasts: TeamBroadcast[]; staff: Staff[]; profile: Staff; isSupervisor: boolean; demo: boolean; onChange: React.Dispatch<React.SetStateAction<TeamBroadcast[]>>; reload: () => void }) {
