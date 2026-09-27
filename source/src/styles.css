@@ -536,3 +536,20 @@ button:disabled {cursor:not-allowed;opacity:.55;}
  .absence-shift-list article { flex-direction:column;align-items:stretch; }
  .absence-shift-list button { justify-content:center; }
 }
+
+/* Separate administration screens, usable on short and mobile displays. */
+.sidebar { overflow-y: auto; }
+.sidebar nav { flex-shrink: 0; }
+.sidebar-bottom { flex-shrink: 0; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.settings-grid h2 { display: flex; align-items: center; gap: 8px; }
+.settings-period { font-weight: 700; color: var(--deep); }
+.settings-holidays ul { list-style: none; padding: 0; margin: 16px 0 0; }
+.settings-holidays li { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.settings-holidays time { font-weight: 600; }
+.settings-shortcuts { display: grid; gap: 24px; }
+.settings-grid button { min-height: 44px; }
+@media (max-width: 760px) {
+  .settings-grid { grid-template-columns: 1fr; gap: 14px; }
+  .settings-holidays li { grid-template-columns: 100px 1fr; gap: 8px; }
+}

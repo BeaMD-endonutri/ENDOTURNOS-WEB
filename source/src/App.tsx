@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { addDays, addMonths, endOfMonth, format, getDay, isSameDay, parseISO, startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Home, History, AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, Clock3, LogOut, Megaphone, Menu, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, Volume2, X } from 'lucide-react'
+import { Settings, Stethoscope, Home, History, AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, Clock3, LogOut, Megaphone, Menu, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, Volume2, X } from 'lucide-react'
 import { CONSULTATIONS, DEMO_STAFF, HOLIDAYS, MASCOTS } from './data/constants'
 import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, type CoverageIssue } from './lib/coverage'
@@ -20,7 +20,7 @@ import HistoryPanel from './components/HistoryPanel'
 import CoveragePreferences from './components/CoveragePreferences'
 import type { CopyPreviewRow } from './lib/planning'
 
-type View = 'home' | 'history' | 'calendar' | 'broadcasts' | 'requests' | 'tasks' | 'team' | 'profile'
+type View = 'home' | 'history' | 'calendar' | 'broadcasts' | 'requests' | 'tasks' | 'team' | 'consultations' | 'settings' | 'profile'
 const todayIso = format(new Date(), 'yyyy-MM-dd')
 const REQUEST_LABELS: Record<RequestType, string> = {
   vacation: 'Vacaciones', permission: 'Permiso', swap: 'Cambio con una compañera',
@@ -242,7 +242,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const nav = [
     ...(isSupervisor ? [['home', Home, 'Inicio']] : []),
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['profile', CircleUserRound, 'Mi ficha'],
-    ...(isSupervisor ? [['team', Users, 'Equipo y consultas'], ['history', History, 'Historial']] : []),
+    ...(isSupervisor ? [['team', Users, 'Equipo'], ['consultations', Stethoscope, 'Consultas'], ['settings', Settings, 'Configuración'], ['history', History, 'Historial']] : []),
   ] as Array<[View, typeof CalendarDays, string]>
 
   const addHistory = (before: Assignment | null, after: Assignment | null) => setHistory(rows => [{id:crypto.randomUUID(), assignment_id:(after??before)!.id,action:!before?'INSERT':!after?'DELETE':'UPDATE',actor_name:activeProfile.display_name,changed_at:new Date().toISOString(),before_data:before,after_data:after},...rows])
@@ -277,7 +277,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   return <div className="app-shell">
     <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-icon"><Clock3 /></span><div><strong>EndoTurnos</strong><small>Endonutrición</small></div></div>
-      <nav>{nav.map(([key, Icon, label]) => <button key={key} className={(view === 'home' && !isSupervisor ? 'calendar' : view) === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
+      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={(view === 'home' && !isSupervisor ? 'calendar' : view) === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false); window.scrollTo({top:0,behavior:'smooth'}) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="mini-profile"><img src={mascot.src} alt="" /><div><strong>{activeProfile.display_name}</strong><small>{isSupervisor ? 'Supervisora' : 'Profesional'}</small></div></div><button className="icon-button" title="Cerrar sesión" onClick={() => demo ? onExitDemo() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
@@ -295,7 +295,9 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
       {shiftSelection && <ShiftEditor selection={shiftSelection} staff={staff} assignments={assignments} requests={requests} consultations={consultations} editable={isSupervisor} coverageProfiles={coverageProfiles} onClose={()=>setShiftSelection(null)} onSave={saveAssignment} onRemove={removeAssignment} />}
       {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={loadData} />}
-      {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} onConsultationsChange={setConsultations} reload={loadData} />}
+      {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={loadData} />}
+      {view === 'consultations' && isSupervisor && <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Consultas</h1><p>Gestiona horarios, profesionales necesarios y periodos de suspensión de cada consulta.</p></div></div><ConsultationManager consultations={consultations} demo={demo} onChange={setConsultations} reload={loadData} /></section>}
+      {view === 'settings' && isSupervisor && <SettingsView onNavigate={setView} />}
       {view === 'profile' && <ProfileView coverageProfile={coverageProfiles.find(p=>p.staff_id===activeProfile.id)} onCoverageChange={setCoverageProfiles} consultations={consultations} profile={activeProfile} demo={demo} onUpdated={(key) => { setProfile(p => p ? { ...p, mascot_key: key } : p); setStaff(p => p.map(s => s.id === activeProfile.id ? { ...s, mascot_key: key } : s)) }} reload={loadData} />}
     </main>
     <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
@@ -387,7 +389,7 @@ function TasksView({ tasks, profile, demo, focusNonce, onChange, reload }: { tas
   return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu recordatorio personal</span><h1>Tareas pendientes</h1><p>Sólo tú puedes ver, editar y eliminar estas tareas.</p></div></div><form className={`quick-task panel ${editingId ? 'editing' : ''}`} onSubmit={save}><input ref={taskInput} required value={title} onChange={e => setTitle(e.target.value)} placeholder="Escribe una tarea pendiente…" /><input required type="date" value={date} onChange={e => setDate(e.target.value)} /><button className="primary">{editingId ? <Pencil /> : <Plus />} {editingId ? 'Guardar' : 'Añadir'}</button>{editingId && <button type="button" className="soft-button" onClick={reset}><X size={16} /> Cancelar</button>}</form><div className="task-days">{[...new Set(own.map(t => t.task_date))].sort().map(day => <section className="panel" key={day}><h2>{format(parseISO(day), "EEEE d 'de' MMMM", { locale: es })}</h2>{own.filter(t => t.task_date === day).map(t => <div className={`task-row ${t.completed ? 'done' : ''}`} key={t.id}><input aria-label={`Completar ${t.title}`} type="checkbox" checked={t.completed} onChange={() => toggle(t)} /><span>{t.title}</span><div className="inline-actions"><button className="icon-action edit" title="Editar tarea" onClick={() => editTask(t)}><Pencil size={15} /> Editar</button><button className="icon-action delete" title="Eliminar tarea" onClick={() => removeTask(t.id)}><Trash2 size={15} /> Eliminar</button></div></div>)}</section>)}{!own.length && <div className="empty-state"><ClipboardList /><p>Añade tu primera tarea del mes.</p></div>}</div></section>
 }
 
-function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, demo, onChange, onConsultationsChange, reload }: { coverageProfiles: CoverageProfile[]; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; staff: Staff[]; consultations: Consultation[]; demo: boolean; onChange: React.Dispatch<React.SetStateAction<Staff[]>>; onConsultationsChange: React.Dispatch<React.SetStateAction<Consultation[]>>; reload: () => void }) {
+function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, demo, onChange, reload }: { coverageProfiles: CoverageProfile[]; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; staff: Staff[]; consultations: Consultation[]; demo: boolean; onChange: React.Dispatch<React.SetStateAction<Staff[]>>; reload: () => void }) {
   const [selectedPerson, setSelectedPerson] = useState<Staff | null>(null)
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -478,7 +480,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
   }
 
   return <section className="content-section">
-    <div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Equipo y consultas</h1><p>Vincula las cuentas registradas con su ficha, edita coberturas y gestiona quién forma parte del equipo.</p></div></div>
+    <div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Equipo</h1><p>Vincula las cuentas registradas con su ficha, edita coberturas y gestiona quién forma parte del equipo.</p></div></div>
     {teamFeedback && <p className="form-message">{teamFeedback}</p>}
 
     {!demo && pendingAccounts.length > 0 && <section className="panel">
@@ -500,7 +502,6 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
       </div>
     </section>}
 
-    <ConsultationManager consultations={consultations} demo={demo} onChange={onConsultationsChange} reload={reload} />
 
     <div className="team-grid">{staff.map(s => <article className={'person-card' + (s.active ? '' : ' inactive')} key={s.id}>
       <img src={MASCOTS.find(m => m.key === s.mascot_key)?.src} alt="" />
@@ -530,6 +531,17 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
       <MascotPicker value={mascot} onChange={setMascot} compact />
       <button className="primary"><Plus /> Añadir e invitar</button>
     </form>
+  </section>
+}
+
+function SettingsView({onNavigate}:{onNavigate:(view:View)=>void}) {
+  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Configuración</h1><p>Consulta las condiciones actuales de planificación y accede a los ajustes de tu perfil.</p></div></div>
+    <div className="settings-grid">
+      <section className="panel"><h2><CalendarDays size={20}/> Periodo de planificación</h2><p className="settings-period">Octubre – diciembre de 2026</p><p className="helper">Periodo disponible actualmente en el cuadrante. Se muestra como información; no se puede modificar desde esta pantalla.</p><button className="soft-button" onClick={()=>onNavigate('calendar')}>Abrir cuadrante</button></section>
+      <section className="panel"><h2><Check size={20}/> Publicación del cuadrante</h2><p>Los cambios se guardan en borrador. El equipo ve la última versión publicada de cada mes.</p><p className="helper">Revisa la cobertura y publica desde el cuadrante cuando esté listo.</p><button className="soft-button" onClick={()=>onNavigate('history')}>Ver historial de cambios</button></section>
+      <section className="panel settings-holidays"><h2><CalendarDays size={20}/> Festivos contemplados</h2><p className="helper">Fechas que el cuadrante excluye de la cobertura habitual. Listado de consulta, sin edición en esta pantalla.</p><ul>{Object.entries(HOLIDAYS).sort(([a],[b])=>a.localeCompare(b)).map(([date,name])=><li key={date}><time dateTime={date}>{format(parseISO(date),'d MMMM',{locale:es})}</time><span>{name}</span></li>)}</ul></section>
+      <section className="panel"><h2><Settings size={20}/> Otros ajustes</h2><div className="settings-shortcuts"><div><strong>Horarios y cobertura</strong><p>Las reglas, cadencias y suspensiones están en Consultas.</p><button className="soft-button" onClick={()=>onNavigate('consultations')}>Gestionar consultas</button></div><div><strong>Tu ficha personal</strong><p>Consulta tu perfil y cambia tu mascota.</p><button className="soft-button" onClick={()=>onNavigate('profile')}>Abrir mi ficha</button></div></div></section>
+    </div>
   </section>
 }
 
