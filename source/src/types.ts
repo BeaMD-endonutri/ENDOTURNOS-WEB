@@ -35,6 +35,7 @@ export interface Assignment {
   end_time: string
   notes?: string | null
   provisional: boolean
+  is_extra?: boolean
   override_reason?: string | null
   updated_at?: string
 }

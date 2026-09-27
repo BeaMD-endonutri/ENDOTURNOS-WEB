@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase'
 export interface PublicationPreview { added:number; changed:number; removed:number; blocked:number; exceptions:number; provisional:number; fingerprint:string }
 export function rotaChanges(draft:Assignment[], published:Assignment[], month:string) {
  const current=draft.filter(a=>a.work_date.startsWith(month)); const previous=published.filter(a=>a.work_date.startsWith(month))
- const fields=(a:Assignment)=>JSON.stringify([a.professional_id,a.work_date,a.consultation_id,a.start_time,a.end_time,a.notes??null,a.provisional,a.override_reason??null])
+ const fields=(a:Assignment)=>JSON.stringify([a.professional_id,a.work_date,a.consultation_id,a.start_time,a.end_time,a.notes??null,a.provisional,a.override_reason??null,a.is_extra??false])
  return {added:current.filter(a=>!previous.some(b=>b.id===a.id)).length, removed:previous.filter(a=>!current.some(b=>b.id===a.id)).length, changed:current.filter(a=>previous.some(b=>b.id===a.id&&fields(a)!==fields(b))).length}
 }
 export default function PublicationPanel({month,isSupervisor,draft,published,publication,locked,coverageCount,demo,onLock,onPublish}:{month:string;isSupervisor:boolean;draft:Assignment[];published:Assignment[];publication?:RotaPublication;locked?:LockedMonth;coverageCount:number;demo:boolean;onLock?:()=>Promise<string|null>;onPublish:(preview:PublicationPreview)=>Promise<string|null>}) {

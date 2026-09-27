@@ -50,7 +50,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  }
  function fill(s:Slot,date:string,target:number){
   while(coverage(s,date)<target){const candidate=available(s,date)[0];if(!candidate)break
-   const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,override_reason:null,notes:null,suggestion_reason:candidate.person.id===s.c.preferred_staff_id?'Profesional preferente':'Profesional secundario'}
+   const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:candidate.person.id===s.c.preferred_staff_id?'Profesional preferente':'Profesional secundario'}
    proposed.push(row);working.push(row)
   }
  }

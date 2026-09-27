@@ -25,7 +25,7 @@ export default function ProfessionalHome({profile,publishedAssignments,consultat
  const calendarDate=inPeriod?today:nextDates[0]??(today<ROTA_START?ROTA_START:ROTA_END)
  const shift=(a:Assignment)=>{
   const c=consultations.find(c=>c.id===a.consultation_id)
-  return <button className="personal-shift" key={a.id} onClick={()=>onCalendar(a.work_date)} aria-label={`Ver ${c?.label??a.consultation_id} del ${a.work_date}, ${a.start_time.slice(0,5)}–${a.end_time.slice(0,5)}`}><span className="personal-shift-dot" style={{background:c?.color??'#3a7d63'}}/><span><strong>{c?.label??a.consultation_id}</strong><small><Clock3 size={14}/>{a.start_time.slice(0,5)}–{a.end_time.slice(0,5)}{a.provisional?' · Provisional':''}</small></span><ChevronRight size={18}/></button>
+  return <button className="personal-shift" key={a.id} onClick={()=>onCalendar(a.work_date)} aria-label={`Ver ${c?.label??a.consultation_id}${a.is_extra?' (extra)':''} del ${a.work_date}, ${a.start_time.slice(0,5)}–${a.end_time.slice(0,5)}`}><span className="personal-shift-dot" style={{background:c?.color??'#3a7d63'}}/><span><strong>{c?.label??a.consultation_id}{a.is_extra?' *':''}</strong><small><Clock3 size={14}/>{a.start_time.slice(0,5)}–{a.end_time.slice(0,5)}{a.provisional?' · Provisional':''}</small></span><ChevronRight size={18}/></button>
  }
  return <section className="content-section professional-home">
   <div className="personal-greeting"><img src={mascot.src} alt=""/><div><span className="eyebrow">Tu día, de un vistazo</span><h1>Hola, {profile.display_name.split(' ')[0].toLocaleLowerCase('es').replace(/^./,s=>s.toUpperCase())}</h1><p>{format(parseISO(today),"EEEE d 'de' MMMM",{locale:es})}</p></div></div>

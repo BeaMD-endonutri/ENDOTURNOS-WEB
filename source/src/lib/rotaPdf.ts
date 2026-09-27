@@ -103,7 +103,7 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
      doc.roundedRect(x+.45,top,cellWidth-.9,badgeHeight,.6,.6,'F')
      doc.setTextColor('#ffffff');doc.setFont('helvetica','bold')
      doc.setFontSize(Math.max(3.8,Math.min(6.6,badgeHeight*1.35)))
-     doc.text(c?.short_label??a.consultation_id.slice(0,5),x+cellWidth/2,top+badgeHeight*.7,{align:'center',maxWidth:cellWidth-1.2})
+     doc.text((c?.short_label??a.consultation_id.slice(0,5))+(a.is_extra?'*':''),x+cellWidth/2,top+badgeHeight*.7,{align:'center',maxWidth:cellWidth-1.2})
     })
    })
    y+=rowHeight
@@ -128,7 +128,7 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
   })
   const noteY=y+9+legendRows*6
   doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor('#647368')
-  doc.text('Fondo salmón: festivo · Celdas vacías: sin asignación · Las asignaciones provisionales deben revisarse en EndoTurnos.',margin,noteY)
+  doc.text('Fondo salmón: festivo · Celdas vacías: sin asignación · * Consulta extra · Las asignaciones provisionales deben revisarse en EndoTurnos.',margin,noteY)
  }
 
  const footer=()=>{
