@@ -89,7 +89,7 @@ export default function FoldersView({
     if (attachmentError) return
 
     const withUrls = await Promise.all(((attachmentRows ?? []) as FolderAttachment[]).map(async attachment => {
-      const { data } = await supabase.storage.from('et-folder-images').createSignedUrl(attachment.storage_path, 3600)
+      const { data } = await supabase!.storage.from('et-folder-images').createSignedUrl(attachment.storage_path, 3600)
       return { ...attachment, signed_url: data?.signedUrl }
     }))
     setAttachments(withUrls)
