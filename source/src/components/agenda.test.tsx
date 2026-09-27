@@ -20,7 +20,7 @@ it('defaults to agenda on mobile, crosses months and keeps the selected day betw
  await act(async()=>host.querySelector<HTMLButtonElement>('.agenda-shift')!.click());expect(select).toHaveBeenCalledWith({date:'2026-11-01',personId:'p',consultationId:'EN1'})
  expect(host.querySelector('.agenda-person header button')).toBeNull()
  await click('Mes');expect(host.querySelectorAll('.day-head')).toHaveLength(30);await click('Agenda');expect(host.querySelector<HTMLInputElement>('[aria-label="Día de la agenda"]')!.value).toBe('2026-11-01')
- await date('2026-12-31');expect(button('Día siguiente').disabled).toBe(true);await date('2026-10-01');expect(button('Día anterior').disabled).toBe(true)
+ await date('2026-12-31');await click('Día siguiente');expect(host.querySelector<HTMLInputElement>('[aria-label="Día de la agenda"]')!.value).toBe('2027-01-01');await date('2026-10-01');await click('Día anterior');expect(host.querySelector<HTMLInputElement>('[aria-label="Día de la agenda"]')!.value).toBe('2026-09-30')
 })
 it('opens the profile and agenda from mobile navigation and closes the secondary menu',async()=>{
  await render(<App/>);await click('Ver demostración interactiva')

@@ -13,7 +13,7 @@ it('downloads personal and team PDFs from a professional profile and retains a f
  const click=vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(()=>{})
  const host=document.createElement('div'); document.body.append(host);const root=createRoot(host)
  const staff=DEMO_STAFF.filter(s=>s.role==='professional');const profile=staff[0]
- await act(async()=>root.render(<CalendarPanel staff={staff} profile={profile} isSupervisor={false} assignments={buildDemoSchedule()} consultations={CONSULTATIONS} issues={[]} focusDate={null} requests={[]} coverageProfiles={[]} syncedAt={new Date()} onSelect={()=>{}} onCopy={async()=>null} onRequest={()=>{}}/>))
+ await act(async()=>root.render(<CalendarPanel staff={staff} profile={profile} isSupervisor={false} assignments={buildDemoSchedule()} consultations={CONSULTATIONS} issues={[]} focusDate="2026-10-01" requests={[]} coverageProfiles={[]} syncedAt={new Date()} onSelect={()=>{}} onCopy={async()=>null} onRequest={()=>{}}/>))
  expect(host.querySelector('select')?.value).toBe(profile.id)
  const download=()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Descargar mes en PDF')!
  await act(async()=>download().click())
