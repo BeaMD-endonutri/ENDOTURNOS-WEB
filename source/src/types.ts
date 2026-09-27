@@ -138,6 +138,8 @@ export interface CoverageProfile {
   updated_at?: string
 }
 
+export interface LockedMonth { month:string; locked_at:string; locked_by:string }
+
 export interface RotaPublication {
  month: string
  published_at: string
