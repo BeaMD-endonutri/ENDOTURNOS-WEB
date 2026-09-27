@@ -10,7 +10,7 @@ import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, sameCoverageRule, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
-import type { CoverageException, RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
+import type { CoverageException, RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast, ScheduledBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
@@ -149,6 +149,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [requests, setRequests] = useState<ShiftRequest[]>([])
   const [tasks, setTasks] = useState<PersonalTask[]>([])
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
+  const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([])
   const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null)
   const [coverageExceptions,setCoverageExceptions]=useState<CoverageException[]>([])
@@ -176,7 +177,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     const config=configResult.data as PlanningConfig
     const readAssignments=async(table:string)=>{const rows:Assignment[]=[];for(let offset=0;;offset+=500){const result=await supabase!.from(table).select('*').gte('work_date',config.start_date).lte('work_date',config.end_date).order('id').range(offset,offset+499);if(result.error)return {data:null,error:result.error};rows.push(...result.data as Assignment[]);if(result.data.length<500)return {data:rows,error:null}}}
     const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
-    const [c, a, r, t, b, h, cp, pub, published, exceptions] = await Promise.all([
+    const [c, a, r, t, b, h, cp, pub, published, exceptions, scheduled] = await Promise.all([
       supabase.from('et_consultations').select('*').eq('active', true).order('sort_order'),
       readAssignments(supervisor ? 'et_assignments' : 'et_published_assignments'),
       supabase.from('et_requests').select('*').order('created_at', { ascending: false }),
@@ -187,13 +188,15 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       supabase.from('et_rota_publications').select('*'),
       readAssignments('et_published_assignments'),
       supervisor ? supabase.from('et_coverage_exceptions').select('*').order('created_at',{ascending:false}) : Promise.resolve({data:[],error:null}),
+      supervisor ? supabase.from('et_scheduled_broadcasts').select('*').order('next_run_at') : Promise.resolve({data:[],error:null}),
     ])
     if(sequence!==loadSequence.current)return
-    const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions].find(result => result.error)
+    const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions,scheduled].find(result => result.error)
     if (failed?.error) { setLoadError('No se han podido actualizar todos los datos. Pulsa Reintentar.'); return }
     setLoadError('')
     setPlanning(config)
     setCoverageExceptions((exceptions.data??[]) as CoverageException[])
+    setScheduledBroadcasts((scheduled.data??[]) as ScheduledBroadcast[])
     setPublications((pub.data??[]) as RotaPublication[])
     setPublishedAssignments((published.data??[]) as Assignment[])
     if (cp.data) setCoverageProfiles(cp.data as CoverageProfile[])
@@ -226,6 +229,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_tasks' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcasts' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcast_recipients' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_scheduled_broadcasts' }, loadData)
       .subscribe()
     return () => { client.removeChannel(channel) }
   }, [demo, loadData, session])
@@ -342,7 +346,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {view === 'calendar' && <CalendarPanel onConsultations={()=>setView('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
       {view === 'incidents' && isSupervisor && <CoverageIssuesPanel onException={setExceptionIssue} exceptions={coverageExceptions} onRevoke={revokeCoverageException} issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
-      {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
+      {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} scheduled={scheduledBroadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} onScheduledChange={setScheduledBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
       {exceptionIssue && <ExceptionDialog issue={exceptionIssue} onClose={()=>setExceptionIssue(null)} onSave={reason=>saveCoverageException(exceptionIssue,reason)}/> }
@@ -372,13 +376,19 @@ function CoverageAlert({ issues, onOpen }: { issues: CoverageIssue[]; onOpen: (d
   return <button className="coverage-banner" onClick={() => onOpen(first.date)}><span className="coverage-banner-icon"><AlertTriangle size={20} /></span><span><strong>{issues.length} {issues.length === 1 ? 'incidencia de cobertura' : 'incidencias de cobertura'}</strong><small>{critical ? `${critical} consultas sin cubrir. ` : ''}{first.title} · {format(parseISO(first.date), 'd MMM', { locale: es })}</small></span><b>Ver cobertura</b></button>
 }
 
-function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChange, reload }: { broadcasts: TeamBroadcast[]; staff: Staff[]; profile: Staff; isSupervisor: boolean; demo: boolean; onChange: React.Dispatch<React.SetStateAction<TeamBroadcast[]>>; reload: () => void }) {
+function BroadcastsView({ broadcasts, scheduled, staff, profile, isSupervisor, demo, onChange, onScheduledChange, reload }: { broadcasts: TeamBroadcast[]; scheduled: ScheduledBroadcast[]; staff: Staff[]; profile: Staff; isSupervisor: boolean; demo: boolean; onChange: React.Dispatch<React.SetStateAction<TeamBroadcast[]>>; onScheduledChange: React.Dispatch<React.SetStateAction<ScheduledBroadcast[]>>; reload: () => void }) {
   const professionals = staff.filter(person => person.role === 'professional' && person.active)
+  const weekdays = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado']
   const [title, setTitle] = useState('Recordatorio')
   const [message, setMessage] = useState('')
   const [selected, setSelected] = useState<Set<string>>(() => new Set(professionals.map(person => person.id)))
   const [feedback, setFeedback] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deliveryMode, setDeliveryMode] = useState<'now'|'scheduled'>('now')
+  const [recurrence, setRecurrence] = useState<'once'|'weekly'>('once')
+  const [scheduledDate, setScheduledDate] = useState(format(addDays(new Date(), 1), 'yyyy-MM-dd'))
+  const [scheduledTime, setScheduledTime] = useState('08:00')
+  const [weekday, setWeekday] = useState(getDay(new Date()))
 
   const toggleRecipient = (id: string) => setSelected(current => {
     const next = new Set(current)
@@ -386,13 +396,53 @@ function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChan
     return next
   })
   const selectEveryone = () => setSelected(new Set(professionals.map(person => person.id)))
-  const resetForm = () => { setEditingId(null); setTitle('Recordatorio'); setMessage(''); setSelected(new Set(professionals.map(person => person.id))); setFeedback('') }
-  const editBroadcast = (item: TeamBroadcast) => { setEditingId(item.id); setTitle(item.title); setMessage(item.message); setSelected(new Set(item.et_broadcast_recipients.map(recipient => recipient.staff_id))); setFeedback(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const resetForm = () => {
+    setEditingId(null); setTitle('Recordatorio'); setMessage(''); setSelected(new Set(professionals.map(person => person.id))); setDeliveryMode('now'); setRecurrence('once'); setScheduledDate(format(addDays(new Date(),1),'yyyy-MM-dd')); setScheduledTime('08:00'); setWeekday(getDay(new Date()))
+  }
+  const editBroadcast = (item: TeamBroadcast) => { setEditingId(item.id); setDeliveryMode('now'); setTitle(item.title); setMessage(item.message); setSelected(new Set(item.et_broadcast_recipients.map(recipient => recipient.staff_id))); setFeedback(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const nextWeeklyIso = (targetWeekday:number,time:string) => {
+    const now=new Date(); const next=new Date(now); const parts=time.split(':').map(Number)
+    next.setHours(parts[0]||0,parts[1]||0,0,0)
+    const days=(targetWeekday-next.getDay()+7)%7
+    next.setDate(next.getDate()+days)
+    if(next<=now) next.setDate(next.getDate()+7)
+    return next.toISOString()
+  }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setFeedback('')
     let pushFailed = false
     const recipientIds = [...selected]
     if (!recipientIds.length) { setFeedback('Elige al menos a una persona.'); return }
+
+    if (!editingId && deliveryMode === 'scheduled') {
+      let scheduledFor: string | null = null
+      if (recurrence === 'once') {
+        const candidate = new Date(scheduledDate + 'T' + scheduledTime + ':00')
+        if (Number.isNaN(candidate.getTime()) || candidate <= new Date()) { setFeedback('Elige una fecha y hora futuras.'); return }
+        scheduledFor = candidate.toISOString()
+      }
+      if (demo) {
+        const nextRun = recurrence === 'once' ? scheduledFor! : nextWeeklyIso(weekday, scheduledTime)
+        const row: ScheduledBroadcast = { id:crypto.randomUUID(), title:title.trim()||'Recordatorio', message:message.trim(), recipient_ids:recipientIds, schedule_type:recurrence, scheduled_for:recurrence==='once'?scheduledFor:null, weekday:recurrence==='weekly'?weekday:null, local_time:recurrence==='weekly'?scheduledTime+':00':null, timezone:'Europe/Madrid', next_run_at:nextRun, active:true, created_by:profile.user_id??'demo', created_at:new Date().toISOString(), updated_at:new Date().toISOString(), last_sent_at:null }
+        onScheduledChange(rows => [...rows,row].sort((a,b)=>a.next_run_at.localeCompare(b.next_run_at)))
+      } else {
+        const { error } = await supabase!.rpc('et_create_scheduled_broadcast', {
+          p_title: title,
+          p_message: message,
+          p_recipient_ids: recipientIds,
+          p_schedule_type: recurrence,
+          p_scheduled_for: recurrence === 'once' ? scheduledFor : null,
+          p_weekday: recurrence === 'weekly' ? weekday : null,
+          p_local_time: recurrence === 'weekly' ? scheduledTime + ':00' : null,
+        })
+        if (error) { setFeedback(error.message || 'No se ha podido programar el aviso.'); return }
+        await reload()
+      }
+      resetForm()
+      setFeedback(recurrence === 'weekly' ? 'Aviso recurrente programado correctamente.' : 'Aviso programado correctamente.')
+      return
+    }
+
     if (demo) {
       if (editingId) onChange(current => current.map(item => item.id === editingId ? { ...item, title: title.trim(), message: message.trim(), et_broadcast_recipients: recipientIds.map(staff_id => ({ staff_id, read_at: null })) } : item))
       else { const next: TeamBroadcast = { id: crypto.randomUUID(), title: title.trim() || 'Recordatorio', message: message.trim(), created_by: profile.user_id ?? 'demo', created_at: new Date().toISOString(), et_broadcast_recipients: recipientIds.map(staff_id => ({ staff_id, read_at: null })) }; onChange(current => [next, ...current]) }
@@ -425,8 +475,35 @@ function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChan
     }
     if (editingId === broadcastId) resetForm()
   }
+  const removeScheduled = async (id:string) => {
+    if (!window.confirm('¿Eliminar este aviso programado?')) return
+    if (demo) onScheduledChange(rows=>rows.filter(item=>item.id!==id))
+    else { const {error}=await supabase!.from('et_scheduled_broadcasts').delete().eq('id',id); if(error){setFeedback('No se ha podido eliminar el aviso programado.');return} await reload() }
+  }
+  const activeSchedules=scheduled.filter(item=>item.active)
 
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Comunicación del equipo</span><h1>Avisos y recordatorios</h1><p>Los mensajes aparecen al instante y la campanita suena cuando EndoTurnos está abierto.</p></div><button className="soft-button" onClick={playBell}><Volume2 size={17} /> Probar campanita</button></div>{isSupervisor && <form className={`panel broadcast-form ${editingId ? 'editing' : ''}`} onSubmit={submit}><div className="request-form-heading"><div><h2><Megaphone /> {editingId ? 'Editar aviso' : 'Nuevo aviso'}</h2><p>Selecciona a todo el equipo o sólo a las personas que deban recibirlo.</p></div>{editingId && <button type="button" className="text-button inline" onClick={resetForm}><X size={16} /> Cancelar</button>}</div><div className="broadcast-fields"><label>Título<input required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} /></label><label>Mensaje<textarea required minLength={3} maxLength={1200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Escribe aquí el recordatorio…" /></label></div><div className="recipient-heading"><strong>Destinatarios · {selected.size}</strong><button type="button" className="text-button inline" onClick={selectEveryone}>Todo el equipo</button></div><div className="recipient-picker">{professionals.map(person => <label key={person.id} className={selected.has(person.id) ? 'selected' : ''}><input type="checkbox" checked={selected.has(person.id)} onChange={() => toggleRecipient(person.id)} /><img src={MASCOTS.find(mascot => mascot.key === person.mascot_key)?.src} alt="" /><span>{person.display_name}</span></label>)}</div>{feedback && <p className="form-message">{feedback}</p>}<button className="primary" disabled={!message.trim() || !selected.size}>{editingId ? <Pencil size={17} /> : <Megaphone size={17} />} {editingId ? 'Guardar cambios' : 'Enviar aviso'}</button></form>}<div className="broadcast-list">{broadcasts.map(item => { const ownRecipient = item.et_broadcast_recipients.find(recipient => recipient.staff_id === profile.id); const unread = Boolean(ownRecipient && !ownRecipient.read_at); const recipients = item.et_broadcast_recipients.map(recipient => staff.find(person => person.id === recipient.staff_id)?.display_name).filter(Boolean); return <article className={`panel broadcast-card ${unread ? 'unread' : ''}`} key={item.id}><div className="broadcast-icon"><Bell /></div><div><div className="broadcast-meta"><span>{unread ? 'Nuevo' : 'Aviso'}</span><time>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time></div><h2>{item.title}</h2><p>{item.message}</p>{isSupervisor && <small>Para: {recipients.length === professionals.length ? 'todo el equipo' : recipients.join(', ')}</small>}</div><div className="card-actions">{unread && <button className="soft-button" onClick={() => markRead(item.id)}><Check size={16} /> Leído</button>}{isSupervisor && <button className="icon-action edit" title="Editar aviso" onClick={() => editBroadcast(item)}><Pencil size={16} /> Editar</button>}<button className="icon-action delete" title={isSupervisor ? 'Eliminar aviso para todos' : 'Eliminar aviso'} onClick={() => removeBroadcast(item.id)}><Trash2 size={16} /> Eliminar</button></div></article> })}{!broadcasts.length && <div className="empty-state panel"><Megaphone /><p>Todavía no hay avisos.</p></div>}</div></section>
+  return <section className="content-section">
+    <div className="section-heading"><div><span className="eyebrow">Comunicación del equipo</span><h1>Avisos y recordatorios</h1><p>Envía un aviso ahora o déjalo programado para una fecha concreta o de forma semanal.</p></div><button className="soft-button" onClick={playBell}><Volume2 size={17} /> Probar campanita</button></div>
+    {isSupervisor && <form className={'panel broadcast-form '+(editingId ? 'editing' : '')} onSubmit={submit}>
+      <div className="request-form-heading"><div><h2><Megaphone /> {editingId ? 'Editar aviso' : 'Nuevo aviso'}</h2><p>Selecciona a todo el equipo o sólo a las personas que deban recibirlo.</p></div>{editingId && <button type="button" className="text-button inline" onClick={resetForm}><X size={16} /> Cancelar</button>}</div>
+      <div className="broadcast-fields"><label>Título<input required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} /></label><label>Mensaje<textarea required minLength={3} maxLength={1200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Escribe aquí el recordatorio…" /></label></div>
+      <div className="recipient-heading"><strong>Destinatarios · {selected.size}</strong><button type="button" className="text-button inline" onClick={selectEveryone}>Todo el equipo</button></div>
+      <div className="recipient-picker">{professionals.map(person => <label key={person.id} className={selected.has(person.id) ? 'selected' : ''}><input type="checkbox" checked={selected.has(person.id)} onChange={() => toggleRecipient(person.id)} /><img src={MASCOTS.find(mascot => mascot.key === person.mascot_key)?.src} alt="" /><span>{person.display_name}</span></label>)}</div>
+      {!editingId && <div className="delivery-planner">
+        <span className="field-label">¿Cuándo se envía?</span>
+        <div className="delivery-choice"><button type="button" className={deliveryMode==='now'?'active':''} onClick={()=>setDeliveryMode('now')}><Megaphone size={16}/> Ahora</button><button type="button" className={deliveryMode==='scheduled'?'active':''} onClick={()=>setDeliveryMode('scheduled')}><CalendarDays size={16}/> Programar</button></div>
+        {deliveryMode==='scheduled' && <div className="schedule-box">
+          <div className="schedule-type-row"><label className={recurrence==='once'?'selected':''}><input type="radio" checked={recurrence==='once'} onChange={()=>setRecurrence('once')}/> Una sola vez</label><label className={recurrence==='weekly'?'selected':''}><input type="radio" checked={recurrence==='weekly'} onChange={()=>setRecurrence('weekly')}/> Repetir cada semana</label></div>
+          <div className="schedule-grid">{recurrence==='once' ? <><label>Fecha<input type="date" min={todayIso} value={scheduledDate} onChange={e=>setScheduledDate(e.target.value)}/></label><label>Hora<input type="time" value={scheduledTime} onChange={e=>setScheduledTime(e.target.value)}/></label></> : <><label>Día de la semana<select value={weekday} onChange={e=>setWeekday(Number(e.target.value))}>{weekdays.map((day,index)=><option key={day} value={index}>{day.charAt(0).toUpperCase()+day.slice(1)}</option>)}</select></label><label>Hora<input type="time" value={scheduledTime} onChange={e=>setScheduledTime(e.target.value)}/></label></>}</div>
+          <small>Se enviará automáticamente en horario peninsular (Europe/Madrid), aunque Guadalupe no tenga EndoTurnos abierto.</small>
+        </div>}
+      </div>}
+      {feedback && <p className="form-message">{feedback}</p>}
+      <button className="primary" disabled={!message.trim() || !selected.size}>{editingId ? <Pencil size={17} /> : deliveryMode==='scheduled' ? <CalendarDays size={17}/> : <Megaphone size={17} />} {editingId ? 'Guardar cambios' : deliveryMode==='scheduled' ? 'Programar aviso' : 'Enviar aviso'}</button>
+    </form>}
+    {isSupervisor && activeSchedules.length>0 && <section className="scheduled-broadcasts"><div className="scheduled-heading"><div><span className="eyebrow">Automáticos</span><h2>Avisos programados</h2></div><span>{activeSchedules.length} activos</span></div><div className="scheduled-grid">{activeSchedules.map(item=>{const recipients=item.recipient_ids.map(id=>staff.find(person=>person.id===id)?.display_name).filter(Boolean);return <article className="panel scheduled-card" key={item.id}><div className="scheduled-card-icon"><CalendarDays/></div><div><div className="scheduled-meta"><strong>{item.schedule_type==='weekly'?'Semanal':'Una vez'}</strong><span>Próximo: {format(parseISO(item.next_run_at),"EEE d MMM · HH:mm",{locale:es})}</span></div><h3>{item.title}</h3><p>{item.message}</p><small>{item.schedule_type==='weekly'?'Cada '+weekdays[item.weekday??0]+' a las '+(item.local_time??'').slice(0,5):'Fecha programada · '+format(parseISO(item.next_run_at),"d MMM yyyy · HH:mm",{locale:es})}</small><small>Para: {recipients.length===professionals.length?'todo el equipo':recipients.join(', ')}</small></div><button type="button" className="icon-action delete" title="Eliminar programación" onClick={()=>removeScheduled(item.id)}><Trash2 size={16}/></button></article>})}</div></section>}
+    <div className="broadcast-list">{broadcasts.map(item => { const ownRecipient = item.et_broadcast_recipients.find(recipient => recipient.staff_id === profile.id); const unread = Boolean(ownRecipient && !ownRecipient.read_at); const recipients = item.et_broadcast_recipients.map(recipient => staff.find(person => person.id === recipient.staff_id)?.display_name).filter(Boolean); return <article className={'panel broadcast-card '+(unread ? 'unread' : '')} key={item.id}><div className="broadcast-icon"><Bell /></div><div><div className="broadcast-meta"><span>{unread ? 'Nuevo' : 'Aviso'}</span><time>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time></div><h2>{item.title}</h2><p>{item.message}</p>{isSupervisor && <small>Para: {recipients.length === professionals.length ? 'todo el equipo' : recipients.join(', ')}</small>}</div><div className="card-actions">{unread && <button className="soft-button" onClick={() => markRead(item.id)}><Check size={16} /> Leído</button>}{isSupervisor && <button className="icon-action edit" title="Editar aviso" onClick={() => editBroadcast(item)}><Pencil size={16} /> Editar</button>}<button className="icon-action delete" title={isSupervisor ? 'Eliminar aviso para todos' : 'Eliminar aviso'} onClick={() => removeBroadcast(item.id)}><Trash2 size={16} /> Eliminar</button></div></article> })}{!broadcasts.length && <div className="empty-state panel"><Megaphone /><p>Todavía no hay avisos.</p></div>}</div>
+  </section>
 }
 
 // Personal task styling is persisted so the same post-it appears on every device.

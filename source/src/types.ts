@@ -83,6 +83,24 @@ export interface TeamBroadcast {
   et_broadcast_recipients: BroadcastRecipient[]
 }
 
+export interface ScheduledBroadcast {
+  id: string
+  title: string
+  message: string
+  recipient_ids: string[]
+  schedule_type: 'once' | 'weekly'
+  scheduled_for: string | null
+  weekday: number | null
+  local_time: string | null
+  timezone: string
+  next_run_at: string
+  active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_sent_at: string | null
+}
+
 export interface CoverageRule {
   id: string
   weekdays: number[]
