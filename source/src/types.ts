@@ -61,6 +61,12 @@ export interface PersonalTask {
   task_date: string
   title: string
   completed: boolean
+  details?: string
+  note_color?: 'yellow' | 'rose' | 'sage' | 'blue' | 'lavender' | 'cream'
+  font_family?: 'nunito' | 'dm-sans' | 'fraunces' | 'caveat'
+  is_bold?: boolean
+  is_italic?: boolean
+  is_underline?: boolean
 }
 
 export interface BroadcastRecipient {
