@@ -1,16 +1,23 @@
+import { getPlanning, usePlanning, setPlanning, DEFAULT_PLANNING, clampDate, type PlanningConfig } from './lib/planningConfig'
+import PlanningSettings from './components/PlanningSettings'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { addDays, addMonths, endOfMonth, format, getDay, isSameDay, parseISO, startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Home, History, AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, Clock3, FolderOpen, LogOut, Megaphone, Menu, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, Volume2, X } from 'lucide-react'
-import { CONSULTATIONS, DEMO_STAFF, HOLIDAYS, MASCOTS } from './data/constants'
+import { Settings, Stethoscope, Home, History, AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, Clock3, FolderOpen, LogOut, Megaphone, Menu, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, Volume2, X } from 'lucide-react'
+import { CONSULTATIONS, DEMO_STAFF, MASCOTS } from './data/constants'
 import { buildDemoSchedule } from './data/demoSchedule'
-import { buildCoverageIssues, type CoverageIssue } from './lib/coverage'
+import { buildCoverageIssues, sameCoverageRule, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import type { CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
+import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
+import type { CoverageException, RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast, ScheduledBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
+import ProfessionalHome from './components/ProfessionalHome'
+import { NotificationsPanel, CoverageIssuesPanel } from './components/AttentionPanels'
+import { ExceptionDialog } from './components/CoverageExceptions'
+import type { PublicationPreview } from './components/PublicationPanel'
 import ShiftEditor, { type AssignmentDraft, type ShiftSelection } from './components/ShiftEditor'
 import CalendarPanel from './components/CalendarPanel'
 import RequestsPanel from './components/RequestsPanel'
@@ -19,7 +26,7 @@ import CoveragePreferences from './components/CoveragePreferences'
 import FoldersView from './components/FoldersView'
 import type { CopyPreviewRow } from './lib/planning'
 
-type View = 'home' | 'history' | 'calendar' | 'broadcasts' | 'requests' | 'tasks' | 'folders' | 'team' | 'profile'
+type View = 'home' | 'history' | 'calendar' | 'broadcasts' | 'requests' | 'tasks' | 'folders' | 'team' | 'consultations' | 'settings' | 'notifications' | 'incidents' | 'profile'
 const todayIso = format(new Date(), 'yyyy-MM-dd')
 const REQUEST_LABELS: Record<RequestType, string> = {
   vacation: 'Vacaciones', permission: 'Permiso', swap: 'Cambio con una compañera',
@@ -130,14 +137,24 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
 }
 
 function Workspace({ session, demo, onExitDemo }: { session: Session | null; demo: boolean; onExitDemo: () => void }) {
+  const planning=usePlanning()
+  const loadSequence=useRef(0)
+  useEffect(()=>{if(demo)setPlanning(DEFAULT_PLANNING)},[demo])
+  const [currentDay,setCurrentDay]=useState(()=>format(new Date(),'yyyy-MM-dd'))
+  useEffect(()=>{const refresh=()=>setCurrentDay(format(new Date(),'yyyy-MM-dd'));const timer=window.setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',refresh)}},[])
   const [staff, setStaff] = useState<Staff[]>(demo ? DEMO_STAFF : [])
   const [consultations, setConsultations] = useState<Consultation[]>(demo ? CONSULTATIONS : [])
   const [assignments, setAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
+  const [publishedAssignments, setPublishedAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
+  const [publications, setPublications] = useState<RotaPublication[]>([])
   const [requests, setRequests] = useState<ShiftRequest[]>([])
   const [tasks, setTasks] = useState<PersonalTask[]>([])
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
-  const [view, setView] = useState<View>('home')
+  const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([])
+  const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null)
+  const [coverageExceptions,setCoverageExceptions]=useState<CoverageException[]>([])
+  const [exceptionIssue,setExceptionIssue]=useState<CoverageIssue|null>(null)
   const [coverageProfiles, setCoverageProfiles] = useState<CoverageProfile[]>([])
   const [history, setHistory] = useState<AssignmentHistory[]>([])
   const [shiftSelection, setShiftSelection] = useState<ShiftSelection | null>(null)
@@ -152,19 +169,37 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
 
   const loadData = useCallback(async () => {
     if (!supabase || demo || !session) return
-    const [s, c, a, r, t, b, h, cp] = await Promise.all([
-      supabase.from('et_staff').select('*').order('display_name'),
+    const sequence=++loadSequence.current
+    const s = await supabase.from('et_staff').select('*').order('display_name')
+    if(s.error){setLoadError('No se han podido cargar los datos. Pulsa Reintentar.');return}
+    if(!s.data?.some(p=>p.user_id===session.user.id)){setProfile(null);setDataLoaded(true);return}
+    const configResult=await supabase.from('et_planning_settings').select('*').eq('id',1).single()
+    if(configResult.error||!configResult.data){setLoadError('No se ha podido cargar el periodo de planificación. Pulsa Reintentar.');return}
+    const config=configResult.data as PlanningConfig
+    const readAssignments=async(table:string)=>{const rows:Assignment[]=[];for(let offset=0;;offset+=500){const result=await supabase!.from(table).select('*').order('id').range(offset,offset+499);if(result.error)return {data:null,error:result.error};rows.push(...result.data as Assignment[]);if(result.data.length<500)return {data:rows,error:null}}}
+    const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
+    const [c, a, r, t, b, h, cp, pub, published, exceptions, scheduled] = await Promise.all([
       supabase.from('et_consultations').select('*').eq('active', true).order('sort_order'),
-      supabase.from('et_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
+      readAssignments(supervisor ? 'et_assignments' : 'et_published_assignments'),
       supabase.from('et_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('et_tasks').select('*').order('task_date'),
       supabase.from('et_broadcasts').select('id,title,message,created_by,created_at,et_broadcast_recipients(staff_id,read_at)').order('created_at', { ascending: false }),
       supabase.from('et_assignment_history').select('*').order('changed_at', { ascending: false }).limit(100),
       supabase.from('et_staff_coverage').select('*'),
+      supabase.from('et_rota_publications').select('*'),
+      readAssignments('et_published_assignments'),
+      supervisor ? supabase.from('et_coverage_exceptions').select('*').order('created_at',{ascending:false}) : Promise.resolve({data:[],error:null}),
+      supervisor ? supabase.from('et_scheduled_broadcasts').select('*').order('next_run_at') : Promise.resolve({data:[],error:null}),
     ])
-    const failed = [s,c,a,r,t,b,h,cp].find(result => result.error)
+    if(sequence!==loadSequence.current)return
+    const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions,scheduled].find(result => result.error)
     if (failed?.error) { setLoadError('No se han podido actualizar todos los datos. Pulsa Reintentar.'); return }
     setLoadError('')
+    setPlanning(config)
+    setCoverageExceptions((exceptions.data??[]) as CoverageException[])
+    setScheduledBroadcasts((scheduled.data??[]) as ScheduledBroadcast[])
+    setPublications((pub.data??[]) as RotaPublication[])
+    setPublishedAssignments((published.data??[]) as Assignment[])
     if (cp.data) setCoverageProfiles(cp.data as CoverageProfile[])
     if (h.data) setHistory(h.data as AssignmentHistory[])
     if (s.data) { setStaff(s.data as Staff[]); setProfile((s.data as Staff[]).find(p => p.user_id === session.user.id) ?? null) }
@@ -183,6 +218,10 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     const client = supabase
     const channel = client.channel('endoturnos-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, loadData)
@@ -191,6 +230,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_tasks' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcasts' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcast_recipients' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_scheduled_broadcasts' }, loadData)
       .subscribe()
     return () => { client.removeChannel(channel) }
   }, [demo, loadData, session])
@@ -227,12 +267,11 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const unreadBroadcasts = broadcastNotificationIds.length
   const unreadRequests = requestNotificationIds.length
   const unreadTotal = unreadBroadcasts + unreadRequests
-  const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests) : []
-  const topNotificationTotal = unreadTotal + coverageIssues.length
+  const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions) : []
   const nav = [
-    ...(isSupervisor ? [['home', Home, 'Inicio']] : []),
+    ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['folders', FolderOpen, 'Mi carpeta'], ['profile', CircleUserRound, 'Mi ficha'],
-    ...(isSupervisor ? [['team', Users, 'Equipo y consultas'], ['history', History, 'Historial']] : []),
+    ...(isSupervisor ? [['team', Users, 'Equipo'], ['consultations', Stethoscope, 'Consultas'], ['settings', Settings, 'Configuración'], ['history', History, 'Historial']] : []),
   ] as Array<[View, typeof CalendarDays, string]>
 
   const addHistory = (before: Assignment | null, after: Assignment | null) => setHistory(rows => [{id:crypto.randomUUID(), assignment_id:(after??before)!.id,action:!before?'INSERT':!after?'DELETE':'UPDATE',actor_name:activeProfile.display_name,changed_at:new Date().toISOString(),before_data:before,after_data:after},...rows])
@@ -252,32 +291,79 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(demo){const next=rows.map(r=>({...r.target,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(items=>[...items,...next]);next.forEach(a=>addHistory(null,a));return null}
     const {error}=await supabase!.rpc('et_copy_assignments',{p_rows:rows.map(r=>({source_id:r.source.id,source_updated_at:r.source.updated_at,target_date:r.target.work_date,accept_review:reviewed}))});if(error)return error.message;await loadData();return null
   }
-  const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
+  const publishRota = async (month:string, preview:PublicationPreview):Promise<string|null> => {
+    if(demo){setPublishedAssignments(rows=>[...rows.filter(a=>!a.work_date.startsWith(month)),...assignments.filter(a=>a.work_date.startsWith(month))]);setPublications(rows=>[...rows.filter(p=>p.month!==month+'-01'),{month:month+'-01',published_at:new Date().toISOString(),version:(rows.find(p=>p.month===month+'-01')?.version??0)+1,initial_snapshot:false}]);return null}
+    const {data,error}=await supabase!.rpc('et_publish_rota',{p_month:month+'-01',p_fingerprint:preview.fingerprint})
+    if(error)throw new Error(error.message)
+    await loadData()
+    if(data?.broadcast_id){try {const {data:push,error:pushError}=await supabase!.functions.invoke('et-send-push',{body:{broadcastId:data.broadcast_id}});if(pushError||push?.error||push?.failed)return 'Cuadrante publicado y aviso guardado. Algunas notificaciones push no se han podido entregar.'} catch {return 'Cuadrante publicado y aviso guardado. No se ha podido confirmar la entrega de las notificaciones push.'}}
+    return null
+  }
+  const saveCoverageException=async(issue:CoverageIssue,reason:string):Promise<string|null>=>{
+    const current=buildCoverageIssues(assignments,consultations,requests).find(i=>i.id===issue.id)
+    if(!issue.exceptionRule||!current?.exceptionRule||!sameCoverageRule(current.exceptionRule,issue.exceptionRule))return 'La cobertura ha cambiado. Cierra esta revisión y actualiza los datos.'
+    const content={work_date:issue.date,consultation_id:issue.consultationId,rule_id:issue.ruleId,rule_snapshot:issue.exceptionRule,reason}
+    if(demo){setCoverageExceptions(rows=>[{...content,id:crypto.randomUUID(),created_by:activeProfile.user_id??'demo',created_by_name:activeProfile.display_name,created_at:new Date().toISOString(),revoked_at:null},...rows]);return null}
+    const {data,error}=await supabase!.from('et_coverage_exceptions').insert(content).select('*').single()
+    if(error)return error.code==='23505'?'Ya hay una excepción para esta franja. Revísala en Cobertura → Excepciones de Planta.':error.message
+    if(!data)return 'No se ha podido confirmar la excepción.'
+    setCoverageExceptions(rows=>[data as CoverageException,...rows.filter(e=>e.id!==data.id)]);await loadData();return null
+  }
+  const revokeCoverageException=async(id:string):Promise<string|null>=>{
+    if(demo){setCoverageExceptions(rows=>rows.map(e=>e.id===id?{...e,revoked_at:new Date().toISOString()}:e));return null}
+    const {data,error}=await supabase!.from('et_coverage_exceptions').update({revoked_at:new Date().toISOString()}).eq('id',id).is('revoked_at',null).select('*')
+    if(error)return error.message
+    if(!data?.length){await loadData();return 'La excepción ya ha cambiado. Se han actualizado los datos.'}
+    setCoverageExceptions(rows=>rows.map(e=>e.id===id?data[0] as CoverageException:e));await loadData();return null
+  }
+  const savePlanning=async(next:PlanningConfig):Promise<string|null>=>{
+    if(demo){setPlanning({...next,updated_at:new Date().toISOString()});setCalendarFocusDate(null);setShiftSelection(null);return null}
+    const {data,error}=await supabase!.from('et_planning_settings').update({start_date:next.start_date,end_date:next.end_date,holidays:next.holidays}).eq('id',1).eq('updated_at',next.updated_at).select('*')
+    if(error)return error.message
+    if(!data?.length)return 'La configuración ha cambiado en otra sesión. Pulsa Recargar configuración antes de guardar.'
+    setCalendarFocusDate(null);setShiftSelection(null);setExceptionIssue(null);await loadData();return null
+  }
+  const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
+  const openCalendar = (date:string) => {setCalendarFocusDate(clampDate(date));setView('calendar')}
   const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
 
   return <div className="app-shell">
-    <aside className={mobileNav ? 'sidebar open' : 'sidebar'}>
+    <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-icon"><Clock3 /></span><div><strong>EndoTurnos</strong><small>Endonutrición</small></div></div>
-      <nav>{nav.map(([key, Icon, label]) => <button key={key} className={(view === 'home' && !isSupervisor ? 'calendar' : view) === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
+      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={view === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false); window.scrollTo({top:0,behavior:'smooth'}) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="mini-profile"><img src={mascot.src} alt="" /><div><strong>{activeProfile.display_name}</strong><small>{isSupervisor ? 'Supervisora' : 'Profesional'}</small></div></div><button className="icon-button" title="Cerrar sesión" onClick={() => demo ? onExitDemo() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
     </aside>
-    <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''}`}>
+    {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
+    <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'?'calendar-screen':''}`}>
       {loadError && <div role="alert" className="form-message">{loadError}<button className="soft-button" onClick={loadData}>Reintentar</button></div>}
-      <header className="topbar"><button aria-label="Abrir menú" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="icon-button notification-button" title="Notificaciones" onClick={() => { if (isSupervisor) { setView('home') } else setView(unreadRequests > 0 && unreadBroadcasts === 0 ? 'requests' : 'broadcasts') }}><Bell size={19} />{topNotificationTotal > 0 && <b>{topNotificationTotal}</b>}</button><button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
-      <Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />
-      {isSupervisor && view !== 'home' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('home')} />}
-      {unreadTotal > 0 && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 solicitud nueva' : `${unreadRequests} solicitudes nuevas`}</span><strong>Ver solicitudes</strong></button>}</div>}
-      {view === 'home' && isSupervisor && <SupervisorHome staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
-      {(view === 'calendar' || (view === 'home' && !isSupervisor)) && <CalendarPanel staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
-      {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
-      {view === 'requests' && <RequestsPanel requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
+      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="attention-button messages" aria-label={`Notificaciones: ${unreadTotal} sin leer`} aria-current={view==='notifications'?'page':undefined} onClick={()=>setView('notifications')}><Bell size={19}/><span>Notificaciones</span>{unreadTotal>0&&<b>{unreadTotal}</b>}</button>{isSupervisor&&<button className="attention-button coverage" aria-label={`Cobertura: ${coverageIssues.length} incidencias`} aria-current={view==='incidents'?'page':undefined} onClick={()=>setView('incidents')}><AlertTriangle size={19}/><span>Cobertura</span><b>{coverageIssues.length}</b></button>}<button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
+      {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
+      {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
+      {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
+      {view === 'home' && <HomeTaskStrip tasks={tasks} profile={activeProfile} demo={demo} onChange={setTasks} reload={loadData} onOpenTasks={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
+      {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??planning.start_date)}>Revisar publicación</button></div>}
+      {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
+      {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
+      {view === 'calendar' && <CalendarPanel suggestionContext={{staff,consultations,assignments,requests,profiles:coverageProfiles,exceptions:coverageExceptions,planning,fingerprint:'demo'}} onSuggestionSaved={async rows=>{if(demo){const added=rows.map(a=>({...a,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(current=>[...current,...added]);added.forEach(a=>addHistory(null,a))}else await loadData()}} onConsultations={()=>setView('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
+      {view === 'incidents' && isSupervisor && <CoverageIssuesPanel onException={setExceptionIssue} exceptions={coverageExceptions} onRevoke={revokeCoverageException} issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
+      {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} scheduled={scheduledBroadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} onScheduledChange={setScheduledBroadcasts} reload={loadData} />}
+      {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
+      {exceptionIssue && <ExceptionDialog issue={exceptionIssue} onClose={()=>setExceptionIssue(null)} onSave={reason=>saveCoverageException(exceptionIssue,reason)}/> }
       {shiftSelection && <ShiftEditor selection={shiftSelection} staff={staff} assignments={assignments} requests={requests} consultations={consultations} editable={isSupervisor} coverageProfiles={coverageProfiles} onClose={()=>setShiftSelection(null)} onSave={saveAssignment} onRemove={removeAssignment} />}
       {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={loadData} />}
       {view === 'folders' && <FoldersView profile={activeProfile} staff={staff} demo={demo} />}
-      {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} onConsultationsChange={setConsultations} reload={loadData} />}
+      {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={loadData} />}
+      {view === 'consultations' && isSupervisor && <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Consultas</h1><p>Gestiona horarios, profesionales necesarios y periodos de suspensión de cada consulta.</p></div></div><ConsultationManager staff={staff} consultations={consultations} demo={demo} onChange={setConsultations} reload={loadData} /></section>}
+      {view === 'settings' && isSupervisor && <SettingsView onNavigate={setView} onSave={savePlanning} />}
       {view === 'profile' && <ProfileView coverageProfile={coverageProfiles.find(p=>p.staff_id===activeProfile.id)} onCoverageChange={setCoverageProfiles} consultations={consultations} profile={activeProfile} demo={demo} onUpdated={(key) => { setProfile(p => p ? { ...p, mascot_key: key } : p); setStaff(p => p.map(s => s.id === activeProfile.id ? { ...s, mascot_key: key } : s)) }} reload={loadData} />}
     </main>
+    <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
+      const active=view===key
+      const count=key==='broadcasts'?unreadBroadcasts:key==='requests'?unreadRequests:0
+      return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{setView(key);setMobileNav(false);if(key==='requests')setRequestFocus(null);window.scrollTo({top:0,behavior:'smooth'})}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
+    })}</nav>
   </div>
 }
 
@@ -289,16 +375,22 @@ function Welcome({ profile, mascot, todayAssignments, consultations, onAddTask }
 function CoverageAlert({ issues, onOpen }: { issues: CoverageIssue[]; onOpen: (date: string) => void }) {
   const critical = issues.filter(issue => issue.severity === 'critical').length
   const first = issues[0]
-  return <button className="coverage-banner" onClick={() => onOpen(first.date)}><span className="coverage-banner-icon"><AlertTriangle size={20} /></span><span><strong>{issues.length} {issues.length === 1 ? 'incidencia de cobertura' : 'incidencias de cobertura'}</strong><small>{critical ? `${critical} consultas sin cubrir. ` : ''}{first.title} · {format(parseISO(first.date), 'd MMM', { locale: es })}</small></span><b>Ver pendientes</b></button>
+  return <button className="coverage-banner" onClick={() => onOpen(first.date)}><span className="coverage-banner-icon"><AlertTriangle size={20} /></span><span><strong>{issues.length} {issues.length === 1 ? 'incidencia de cobertura' : 'incidencias de cobertura'}</strong><small>{critical ? `${critical} consultas sin cubrir. ` : ''}{first.title} · {format(parseISO(first.date), 'd MMM', { locale: es })}</small></span><b>Ver cobertura</b></button>
 }
 
-function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChange, reload }: { broadcasts: TeamBroadcast[]; staff: Staff[]; profile: Staff; isSupervisor: boolean; demo: boolean; onChange: React.Dispatch<React.SetStateAction<TeamBroadcast[]>>; reload: () => void }) {
+function BroadcastsView({ broadcasts, scheduled, staff, profile, isSupervisor, demo, onChange, onScheduledChange, reload }: { broadcasts: TeamBroadcast[]; scheduled: ScheduledBroadcast[]; staff: Staff[]; profile: Staff; isSupervisor: boolean; demo: boolean; onChange: React.Dispatch<React.SetStateAction<TeamBroadcast[]>>; onScheduledChange: React.Dispatch<React.SetStateAction<ScheduledBroadcast[]>>; reload: () => void }) {
   const professionals = staff.filter(person => person.role === 'professional' && person.active)
+  const weekdays = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado']
   const [title, setTitle] = useState('Recordatorio')
   const [message, setMessage] = useState('')
   const [selected, setSelected] = useState<Set<string>>(() => new Set(professionals.map(person => person.id)))
   const [feedback, setFeedback] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deliveryMode, setDeliveryMode] = useState<'now'|'scheduled'>('now')
+  const [recurrence, setRecurrence] = useState<'once'|'weekly'>('once')
+  const [scheduledDate, setScheduledDate] = useState(format(addDays(new Date(), 1), 'yyyy-MM-dd'))
+  const [scheduledTime, setScheduledTime] = useState('08:00')
+  const [weekday, setWeekday] = useState(getDay(new Date()))
 
   const toggleRecipient = (id: string) => setSelected(current => {
     const next = new Set(current)
@@ -306,23 +398,69 @@ function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChan
     return next
   })
   const selectEveryone = () => setSelected(new Set(professionals.map(person => person.id)))
-  const resetForm = () => { setEditingId(null); setTitle('Recordatorio'); setMessage(''); setSelected(new Set(professionals.map(person => person.id))); setFeedback('') }
-  const editBroadcast = (item: TeamBroadcast) => { setEditingId(item.id); setTitle(item.title); setMessage(item.message); setSelected(new Set(item.et_broadcast_recipients.map(recipient => recipient.staff_id))); setFeedback(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const resetForm = () => {
+    setEditingId(null); setTitle('Recordatorio'); setMessage(''); setSelected(new Set(professionals.map(person => person.id))); setDeliveryMode('now'); setRecurrence('once'); setScheduledDate(format(addDays(new Date(),1),'yyyy-MM-dd')); setScheduledTime('08:00'); setWeekday(getDay(new Date()))
+  }
+  const editBroadcast = (item: TeamBroadcast) => { setEditingId(item.id); setDeliveryMode('now'); setTitle(item.title); setMessage(item.message); setSelected(new Set(item.et_broadcast_recipients.map(recipient => recipient.staff_id))); setFeedback(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const nextWeeklyIso = (targetWeekday:number,time:string) => {
+    const now=new Date(); const next=new Date(now); const parts=time.split(':').map(Number)
+    next.setHours(parts[0]||0,parts[1]||0,0,0)
+    const days=(targetWeekday-next.getDay()+7)%7
+    next.setDate(next.getDate()+days)
+    if(next<=now) next.setDate(next.getDate()+7)
+    return next.toISOString()
+  }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setFeedback('')
+    let pushFailed = false
     const recipientIds = [...selected]
     if (!recipientIds.length) { setFeedback('Elige al menos a una persona.'); return }
+
+    if (!editingId && deliveryMode === 'scheduled') {
+      let scheduledFor: string | null = null
+      if (recurrence === 'once') {
+        const candidate = new Date(scheduledDate + 'T' + scheduledTime + ':00')
+        if (Number.isNaN(candidate.getTime()) || candidate <= new Date()) { setFeedback('Elige una fecha y hora futuras.'); return }
+        scheduledFor = candidate.toISOString()
+      }
+      if (demo) {
+        const nextRun = recurrence === 'once' ? scheduledFor! : nextWeeklyIso(weekday, scheduledTime)
+        const row: ScheduledBroadcast = { id:crypto.randomUUID(), title:title.trim()||'Recordatorio', message:message.trim(), recipient_ids:recipientIds, schedule_type:recurrence, scheduled_for:recurrence==='once'?scheduledFor:null, weekday:recurrence==='weekly'?weekday:null, local_time:recurrence==='weekly'?scheduledTime+':00':null, timezone:'Europe/Madrid', next_run_at:nextRun, active:true, created_by:profile.user_id??'demo', created_at:new Date().toISOString(), updated_at:new Date().toISOString(), last_sent_at:null }
+        onScheduledChange(rows => [...rows,row].sort((a,b)=>a.next_run_at.localeCompare(b.next_run_at)))
+      } else {
+        const { error } = await supabase!.rpc('et_create_scheduled_broadcast', {
+          p_title: title,
+          p_message: message,
+          p_recipient_ids: recipientIds,
+          p_schedule_type: recurrence,
+          p_scheduled_for: recurrence === 'once' ? scheduledFor : null,
+          p_weekday: recurrence === 'weekly' ? weekday : null,
+          p_local_time: recurrence === 'weekly' ? scheduledTime + ':00' : null,
+        })
+        if (error) { setFeedback(error.message || 'No se ha podido programar el aviso.'); return }
+        await reload()
+      }
+      resetForm()
+      setFeedback(recurrence === 'weekly' ? 'Aviso recurrente programado correctamente.' : 'Aviso programado correctamente.')
+      return
+    }
+
     if (demo) {
       if (editingId) onChange(current => current.map(item => item.id === editingId ? { ...item, title: title.trim(), message: message.trim(), et_broadcast_recipients: recipientIds.map(staff_id => ({ staff_id, read_at: null })) } : item))
       else { const next: TeamBroadcast = { id: crypto.randomUUID(), title: title.trim() || 'Recordatorio', message: message.trim(), created_by: profile.user_id ?? 'demo', created_at: new Date().toISOString(), et_broadcast_recipients: recipientIds.map(staff_id => ({ staff_id, read_at: null })) }; onChange(current => [next, ...current]) }
     } else {
-      const { error } = editingId
+      const { data: createdId, error } = editingId
         ? await supabase!.rpc('et_update_broadcast', { p_broadcast_id: editingId, p_title: title, p_message: message, p_recipient_ids: recipientIds })
         : await supabase!.rpc('et_create_broadcast', { p_title: title, p_message: message, p_recipient_ids: recipientIds })
       if (error) { setFeedback('No se ha podido enviar el aviso. Inténtalo de nuevo.'); return }
+      if (!editingId && createdId) {
+        const { data: pushResult, error: pushError } = await supabase!.functions.invoke('et-send-push', { body: { broadcastId: createdId } })
+        if (pushError || pushResult?.error || pushResult?.failed) pushFailed = true
+      }
       await reload()
     }
     resetForm()
+    if (pushFailed) setFeedback('El aviso se ha guardado, pero no se han podido enviar las notificaciones push.')
   }
   const markRead = async (broadcastId: string) => {
     if (demo) onChange(current => current.map(item => item.id === broadcastId ? { ...item, et_broadcast_recipients: item.et_broadcast_recipients.map(recipient => recipient.staff_id === profile.id ? { ...recipient, read_at: new Date().toISOString() } : recipient) } : item))
@@ -339,24 +477,131 @@ function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChan
     }
     if (editingId === broadcastId) resetForm()
   }
+  const removeScheduled = async (id:string) => {
+    if (!window.confirm('¿Eliminar este aviso programado?')) return
+    if (demo) onScheduledChange(rows=>rows.filter(item=>item.id!==id))
+    else { const {error}=await supabase!.from('et_scheduled_broadcasts').delete().eq('id',id); if(error){setFeedback('No se ha podido eliminar el aviso programado.');return} await reload() }
+  }
+  const activeSchedules=scheduled.filter(item=>item.active)
 
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Comunicación del equipo</span><h1>Avisos y recordatorios</h1><p>Los mensajes aparecen al instante y la campanita suena cuando EndoTurnos está abierto.</p></div><button className="soft-button" onClick={playBell}><Volume2 size={17} /> Probar campanita</button></div>{isSupervisor && <form className={`panel broadcast-form ${editingId ? 'editing' : ''}`} onSubmit={submit}><div className="request-form-heading"><div><h2><Megaphone /> {editingId ? 'Editar aviso' : 'Nuevo aviso'}</h2><p>Selecciona a todo el equipo o sólo a las personas que deban recibirlo.</p></div>{editingId && <button type="button" className="text-button inline" onClick={resetForm}><X size={16} /> Cancelar</button>}</div><div className="broadcast-fields"><label>Título<input required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} /></label><label>Mensaje<textarea required minLength={3} maxLength={1200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Escribe aquí el recordatorio…" /></label></div><div className="recipient-heading"><strong>Destinatarios · {selected.size}</strong><button type="button" className="text-button inline" onClick={selectEveryone}>Todo el equipo</button></div><div className="recipient-picker">{professionals.map(person => <label key={person.id} className={selected.has(person.id) ? 'selected' : ''}><input type="checkbox" checked={selected.has(person.id)} onChange={() => toggleRecipient(person.id)} /><img src={MASCOTS.find(mascot => mascot.key === person.mascot_key)?.src} alt="" /><span>{person.display_name}</span></label>)}</div>{feedback && <p className="form-message">{feedback}</p>}<button className="primary" disabled={!message.trim() || !selected.size}>{editingId ? <Pencil size={17} /> : <Megaphone size={17} />} {editingId ? 'Guardar cambios' : 'Enviar aviso'}</button></form>}<div className="broadcast-list">{broadcasts.map(item => { const ownRecipient = item.et_broadcast_recipients.find(recipient => recipient.staff_id === profile.id); const unread = Boolean(ownRecipient && !ownRecipient.read_at); const recipients = item.et_broadcast_recipients.map(recipient => staff.find(person => person.id === recipient.staff_id)?.display_name).filter(Boolean); return <article className={`panel broadcast-card ${unread ? 'unread' : ''}`} key={item.id}><div className="broadcast-icon"><Bell /></div><div><div className="broadcast-meta"><span>{unread ? 'Nuevo' : 'Aviso'}</span><time>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time></div><h2>{item.title}</h2><p>{item.message}</p>{isSupervisor && <small>Para: {recipients.length === professionals.length ? 'todo el equipo' : recipients.join(', ')}</small>}</div><div className="card-actions">{unread && <button className="soft-button" onClick={() => markRead(item.id)}><Check size={16} /> Leído</button>}{isSupervisor && <button className="icon-action edit" title="Editar aviso" onClick={() => editBroadcast(item)}><Pencil size={16} /> Editar</button>}<button className="icon-action delete" title={isSupervisor ? 'Eliminar aviso para todos' : 'Eliminar aviso'} onClick={() => removeBroadcast(item.id)}><Trash2 size={16} /> Eliminar</button></div></article> })}{!broadcasts.length && <div className="empty-state panel"><Megaphone /><p>Todavía no hay avisos.</p></div>}</div></section>
+  return <section className="content-section">
+    <div className="section-heading"><div><span className="eyebrow">Comunicación del equipo</span><h1>Avisos y recordatorios</h1><p>Envía un aviso ahora o déjalo programado para una fecha concreta o de forma semanal.</p></div><button className="soft-button" onClick={playBell}><Volume2 size={17} /> Probar campanita</button></div>
+    {isSupervisor && <form className={'panel broadcast-form '+(editingId ? 'editing' : '')} onSubmit={submit}>
+      <div className="request-form-heading"><div><h2><Megaphone /> {editingId ? 'Editar aviso' : 'Nuevo aviso'}</h2><p>Selecciona a todo el equipo o sólo a las personas que deban recibirlo.</p></div>{editingId && <button type="button" className="text-button inline" onClick={resetForm}><X size={16} /> Cancelar</button>}</div>
+      <div className="broadcast-fields"><label>Título<input required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} /></label><label>Mensaje<textarea required minLength={3} maxLength={1200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Escribe aquí el recordatorio…" /></label></div>
+      <div className="recipient-heading"><strong>Destinatarios · {selected.size}</strong><button type="button" className="text-button inline" onClick={selectEveryone}>Todo el equipo</button></div>
+      <div className="recipient-picker">{professionals.map(person => <label key={person.id} className={selected.has(person.id) ? 'selected' : ''}><input type="checkbox" checked={selected.has(person.id)} onChange={() => toggleRecipient(person.id)} /><img src={MASCOTS.find(mascot => mascot.key === person.mascot_key)?.src} alt="" /><span>{person.display_name}</span></label>)}</div>
+      {!editingId && <div className="delivery-planner">
+        <span className="field-label">¿Cuándo se envía?</span>
+        <div className="delivery-choice"><button type="button" className={deliveryMode==='now'?'active':''} onClick={()=>setDeliveryMode('now')}><Megaphone size={16}/> Ahora</button><button type="button" className={deliveryMode==='scheduled'?'active':''} onClick={()=>setDeliveryMode('scheduled')}><CalendarDays size={16}/> Programar</button></div>
+        {deliveryMode==='scheduled' && <div className="schedule-box">
+          <div className="schedule-type-row"><label className={recurrence==='once'?'selected':''}><input type="radio" checked={recurrence==='once'} onChange={()=>setRecurrence('once')}/> Una sola vez</label><label className={recurrence==='weekly'?'selected':''}><input type="radio" checked={recurrence==='weekly'} onChange={()=>setRecurrence('weekly')}/> Repetir cada semana</label></div>
+          <div className="schedule-grid">{recurrence==='once' ? <><label>Fecha<input type="date" min={todayIso} value={scheduledDate} onChange={e=>setScheduledDate(e.target.value)}/></label><label>Hora<input type="time" value={scheduledTime} onChange={e=>setScheduledTime(e.target.value)}/></label></> : <><label>Día de la semana<select value={weekday} onChange={e=>setWeekday(Number(e.target.value))}>{weekdays.map((day,index)=><option key={day} value={index}>{day.charAt(0).toUpperCase()+day.slice(1)}</option>)}</select></label><label>Hora<input type="time" value={scheduledTime} onChange={e=>setScheduledTime(e.target.value)}/></label></>}</div>
+          <small>Se enviará automáticamente en horario peninsular (Europe/Madrid), aunque Guadalupe no tenga EndoTurnos abierto.</small>
+        </div>}
+      </div>}
+      {feedback && <p className="form-message">{feedback}</p>}
+      <button className="primary" disabled={!message.trim() || !selected.size}>{editingId ? <Pencil size={17} /> : deliveryMode==='scheduled' ? <CalendarDays size={17}/> : <Megaphone size={17} />} {editingId ? 'Guardar cambios' : deliveryMode==='scheduled' ? 'Programar aviso' : 'Enviar aviso'}</button>
+    </form>}
+    {isSupervisor && activeSchedules.length>0 && <section className="scheduled-broadcasts"><div className="scheduled-heading"><div><span className="eyebrow">Automáticos</span><h2>Avisos programados</h2></div><span>{activeSchedules.length} activos</span></div><div className="scheduled-grid">{activeSchedules.map(item=>{const recipients=item.recipient_ids.map(id=>staff.find(person=>person.id===id)?.display_name).filter(Boolean);return <article className="panel scheduled-card" key={item.id}><div className="scheduled-card-icon"><CalendarDays/></div><div><div className="scheduled-meta"><strong>{item.schedule_type==='weekly'?'Semanal':'Una vez'}</strong><span>Próximo: {format(parseISO(item.next_run_at),"EEE d MMM · HH:mm",{locale:es})}</span></div><h3>{item.title}</h3><p>{item.message}</p><small>{item.schedule_type==='weekly'?'Cada '+weekdays[item.weekday??0]+' a las '+(item.local_time??'').slice(0,5):'Fecha programada · '+format(parseISO(item.next_run_at),"d MMM yyyy · HH:mm",{locale:es})}</small><small>Para: {recipients.length===professionals.length?'todo el equipo':recipients.join(', ')}</small></div><button type="button" className="icon-action delete" title="Eliminar programación" onClick={()=>removeScheduled(item.id)}><Trash2 size={16}/></button></article>})}</div></section>}
+    <div className="broadcast-list">{broadcasts.map(item => { const ownRecipient = item.et_broadcast_recipients.find(recipient => recipient.staff_id === profile.id); const unread = Boolean(ownRecipient && !ownRecipient.read_at); const recipients = item.et_broadcast_recipients.map(recipient => staff.find(person => person.id === recipient.staff_id)?.display_name).filter(Boolean); return <article className={'panel broadcast-card '+(unread ? 'unread' : '')} key={item.id}><div className="broadcast-icon"><Bell /></div><div><div className="broadcast-meta"><span>{unread ? 'Nuevo' : 'Aviso'}</span><time>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time></div><h2>{item.title}</h2><p>{item.message}</p>{isSupervisor && <small>Para: {recipients.length === professionals.length ? 'todo el equipo' : recipients.join(', ')}</small>}</div><div className="card-actions">{unread && <button className="soft-button" onClick={() => markRead(item.id)}><Check size={16} /> Leído</button>}{isSupervisor && <button className="icon-action edit" title="Editar aviso" onClick={() => editBroadcast(item)}><Pencil size={16} /> Editar</button>}<button className="icon-action delete" title={isSupervisor ? 'Eliminar aviso para todos' : 'Eliminar aviso'} onClick={() => removeBroadcast(item.id)}><Trash2 size={16} /> Eliminar</button></div></article> })}{!broadcasts.length && <div className="empty-state panel"><Megaphone /><p>Todavía no hay avisos.</p></div>}</div>
+  </section>
+}
+
+// Personal task styling is persisted so the same post-it appears on every device.
+function taskFont(font: PersonalTask['font_family']) {
+  return font === 'fraunces' ? "'Fraunces', serif" : font === 'caveat' ? "'Caveat', cursive" : font === 'dm-sans' ? "'DM Sans', sans-serif" : "'Nunito', sans-serif"
+}
+
+function taskStyle(task: PersonalTask): React.CSSProperties {
+  return {
+    fontFamily: taskFont(task.font_family ?? 'nunito'),
+    fontWeight: task.is_bold ? 700 : 500,
+    fontStyle: task.is_italic ? 'italic' : 'normal',
+    textDecoration: task.is_underline ? 'underline' : 'none',
+  }
+}
+
+function HomeTaskStrip({ tasks, profile, demo, onChange, reload, onOpenTasks }: { tasks: PersonalTask[]; profile: Staff; demo: boolean; onChange: React.Dispatch<React.SetStateAction<PersonalTask[]>>; reload: () => void; onOpenTasks: () => void }) {
+  const own = tasks.filter(task => task.professional_id === profile.id).sort((a,b) => a.task_date.localeCompare(b.task_date))
+  const pending = own.filter(task => !task.completed)
+  const visible = (pending.length ? pending : own).slice(0, 6)
+  const toggle = async (task: PersonalTask) => {
+    if (demo) onChange(rows => rows.map(row => row.id === task.id ? { ...row, completed: !row.completed } : row))
+    else { await supabase?.from('et_tasks').update({ completed: !task.completed }).eq('id', task.id); await reload() }
+  }
+  return <section className="home-task-strip" aria-label="Mis tareas">
+    <div className="home-task-heading"><div><span className="eyebrow">Mis recordatorios</span><h2>Post-its de tareas</h2></div><button className="soft-button" onClick={onOpenTasks}><Plus size={16}/> Añadir tarea</button></div>
+    {visible.length ? <div className="home-postits">{visible.map((task,index)=><article key={task.id} className={'mini-postit '+(task.note_color??'yellow')+(task.completed?' done':'')} style={{'--tilt':`${[-1.2,.7,-.5,1,-.8,.4][index%6]}deg`} as React.CSSProperties}>
+      <span className="pushpin" aria-hidden="true"/>
+      <div className="postit-topline"><input aria-label={'Completar '+task.title} type="checkbox" checked={task.completed} onChange={()=>toggle(task)}/><time>{format(parseISO(task.task_date),'d MMM',{locale:es})}</time></div>
+      <strong style={taskStyle(task)}>{task.title}</strong>
+      {task.details && <p style={taskStyle(task)}>{task.details}</p>}
+    </article>)}</div> : <button className="empty-postit" onClick={onOpenTasks}><span className="pushpin" aria-hidden="true"/><Plus size={18}/><span>Añade tu primera tarea</span></button>}
+  </section>
 }
 
 function TasksView({ tasks, profile, demo, focusNonce, onChange, reload }: { tasks: PersonalTask[]; profile: Staff; demo: boolean; focusNonce: number; onChange: React.Dispatch<React.SetStateAction<PersonalTask[]>>; reload: () => void }) {
-  const [title, setTitle] = useState(''); const [date, setDate] = useState(todayIso); const [editingId, setEditingId] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
+  const [details, setDetails] = useState('')
+  const [date, setDate] = useState(todayIso)
+  const [color, setColor] = useState<PersonalTask['note_color']>('yellow')
+  const [fontFamily, setFontFamily] = useState<PersonalTask['font_family']>('nunito')
+  const [bold, setBold] = useState(false)
+  const [italic, setItalic] = useState(false)
+  const [underline, setUnderline] = useState(false)
+  const [completed, setCompleted] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const taskInput = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (focusNonce > 0) taskInput.current?.focus() }, [focusNonce])
-  const own = tasks.filter(t => t.professional_id === profile.id)
-  const reset = () => { setTitle(''); setDate(todayIso); setEditingId(null) }
-  const save = async (e: React.FormEvent) => { e.preventDefault(); if (editingId) { const content = { task_date: date, title: title.trim() }; if (demo) onChange(p => p.map(task => task.id === editingId ? { ...task, ...content } : task)); else { await supabase?.from('et_tasks').update(content).eq('id', editingId); await reload() } reset(); return } const row = { professional_id: profile.id, task_date: date, title: title.trim(), completed: false }; if (demo) onChange(p => [...p, { ...row, id: crypto.randomUUID() }]); else { await supabase?.from('et_tasks').insert(row); await reload() } reset() }
-  const editTask = (task: PersonalTask) => { setEditingId(task.id); setTitle(task.title); setDate(task.task_date); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  const removeTask = async (id: string) => { if (!window.confirm(PERMANENT_DELETE_PROMPT)) return; if (demo) onChange(p => p.filter(task => task.id !== id)); else { await supabase?.from('et_tasks').delete().eq('id', id); await reload() } if (editingId === id) reset() }
-  const toggle = async (t: PersonalTask) => { if (demo) onChange(p => p.map(x => x.id === t.id ? { ...x, completed: !x.completed } : x)); else { await supabase?.from('et_tasks').update({ completed: !t.completed }).eq('id', t.id); reload() } }
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu recordatorio personal</span><h1>Tareas pendientes</h1><p>Sólo tú puedes ver, editar y eliminar estas tareas.</p></div></div><form className={`quick-task panel ${editingId ? 'editing' : ''}`} onSubmit={save}><input ref={taskInput} required value={title} onChange={e => setTitle(e.target.value)} placeholder="Escribe una tarea pendiente…" /><input required type="date" value={date} onChange={e => setDate(e.target.value)} /><button className="primary">{editingId ? <Pencil /> : <Plus />} {editingId ? 'Guardar' : 'Añadir'}</button>{editingId && <button type="button" className="soft-button" onClick={reset}><X size={16} /> Cancelar</button>}</form><div className="task-days">{[...new Set(own.map(t => t.task_date))].sort().map(day => <section className="panel" key={day}><h2>{format(parseISO(day), "EEEE d 'de' MMMM", { locale: es })}</h2>{own.filter(t => t.task_date === day).map(t => <div className={`task-row ${t.completed ? 'done' : ''}`} key={t.id}><input aria-label={`Completar ${t.title}`} type="checkbox" checked={t.completed} onChange={() => toggle(t)} /><span>{t.title}</span><div className="inline-actions"><button className="icon-action edit" title="Editar tarea" onClick={() => editTask(t)}><Pencil size={15} /> Editar</button><button className="icon-action delete" title="Eliminar tarea" onClick={() => removeTask(t.id)}><Trash2 size={15} /> Eliminar</button></div></div>)}</section>)}{!own.length && <div className="empty-state"><ClipboardList /><p>Añade tu primera tarea del mes.</p></div>}</div></section>
+  useEffect(() => { if (focusNonce > 0) { taskInput.current?.focus(); window.scrollTo({ top: 0, behavior: 'smooth' }) } }, [focusNonce])
+  const own = tasks.filter(t => t.professional_id === profile.id).sort((a,b) => a.task_date.localeCompare(b.task_date))
+  const reset = () => { setTitle(''); setDetails(''); setDate(todayIso); setColor('yellow'); setFontFamily('nunito'); setBold(false); setItalic(false); setUnderline(false); setCompleted(false); setEditingId(null) }
+  const payload = () => ({ task_date: date, title: title.trim(), details: details.trim(), note_color: color, font_family: fontFamily, is_bold: bold, is_italic: italic, is_underline: underline, completed })
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const content = payload()
+    if (editingId) {
+      if (demo) onChange(rows => rows.map(task => task.id === editingId ? { ...task, ...content } : task))
+      else { await supabase?.from('et_tasks').update(content).eq('id', editingId); await reload() }
+    } else {
+      const row = { professional_id: profile.id, ...content }
+      if (demo) onChange(rows => [...rows, { ...row, id: crypto.randomUUID() }])
+      else { await supabase?.from('et_tasks').insert(row); await reload() }
+    }
+    reset()
+  }
+  const editTask = (task: PersonalTask) => {
+    setEditingId(task.id); setTitle(task.title); setDetails(task.details??''); setDate(task.task_date); setColor(task.note_color??'yellow'); setFontFamily(task.font_family??'nunito'); setBold(Boolean(task.is_bold)); setItalic(Boolean(task.is_italic)); setUnderline(Boolean(task.is_underline)); setCompleted(task.completed); window.scrollTo({ top: 0, behavior: 'smooth' }); window.setTimeout(()=>taskInput.current?.focus(),250)
+  }
+  const removeTask = async (id: string) => { if (!window.confirm(PERMANENT_DELETE_PROMPT)) return; if (demo) onChange(rows => rows.filter(task => task.id !== id)); else { await supabase?.from('et_tasks').delete().eq('id', id); await reload() } if (editingId === id) reset() }
+  const toggle = async (task: PersonalTask) => { if (demo) onChange(rows => rows.map(row => row.id === task.id ? { ...row, completed: !row.completed } : row)); else { await supabase?.from('et_tasks').update({ completed: !task.completed }).eq('id', task.id); await reload() } }
+  const preview: PersonalTask = { id:'preview', professional_id:profile.id, task_date:date, title:title||'Así se verá tu tarea', details:details||'Puedes escribir varias líneas y párrafos.', completed, note_color:color, font_family:fontFamily, is_bold:bold, is_italic:italic, is_underline:underline }
+  return <section className="content-section tasks-postit-page">
+    <div className="section-heading"><div><span className="eyebrow">Tu recordatorio personal</span><h1>Mis tareas</h1><p>Crea post-its a tu gusto. Sólo tú puedes verlos, editarlos y eliminarlos.</p></div></div>
+    <form className={'task-composer postit '+color+(editingId?' editing':'')} onSubmit={save}>
+      <span className="pushpin large" aria-hidden="true"/>
+      <div className="task-composer-head"><div><span className="eyebrow">{editingId?'Editando post-it':'Nuevo post-it'}</span><h2>{editingId?'Editar tarea':'Añadir tarea'}</h2></div>{editingId&&<button type="button" className="icon-action edit" title="Cancelar edición" onClick={reset}><X size={17}/></button>}</div>
+      <label>Título<input ref={taskInput} required maxLength={120} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Ej. Revisar analíticas"/></label>
+      <label>Descripción<textarea maxLength={1500} value={details} onChange={e=>setDetails(e.target.value)} placeholder={'Escribe aquí todo lo que necesites…\n\nPuedes separar el texto en varios párrafos.'}/></label>
+      <div className="task-format-row">
+        <div><span className="field-label">Formato</span><div className="format-buttons"><button type="button" aria-pressed={bold} className={bold?'active':''} onClick={()=>setBold(v=>!v)}><b>B</b></button><button type="button" aria-pressed={italic} className={italic?'active':''} onClick={()=>setItalic(v=>!v)}><i>I</i></button><button type="button" aria-pressed={underline} className={underline?'active':''} onClick={()=>setUnderline(v=>!v)}><u>U</u></button></div></div>
+        <label>Tipo de letra<select value={fontFamily} onChange={e=>setFontFamily(e.target.value as PersonalTask['font_family'])}><option value="nunito">Nunito</option><option value="dm-sans">DM Sans</option><option value="fraunces">Fraunces</option><option value="caveat">Manuscrita</option></select></label>
+        <label>Fecha<input required type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>
+      </div>
+      <div className="color-picker"><span className="field-label">Color del post-it</span><div>{(['yellow','rose','sage','blue','lavender','cream'] as PersonalTask['note_color'][]).map(name=><button key={name} type="button" aria-label={'Color '+name} aria-pressed={color===name} className={'color-swatch '+name+(color===name?' selected':'')} onClick={()=>setColor(name)}/>)}</div></div>
+      <div className="composer-bottom"><label className="task-completed-check"><input type="checkbox" checked={completed} onChange={e=>setCompleted(e.target.checked)}/><span>Marcar como completada</span></label><div className={'task-preview mini-postit '+color+(completed?' done':'')}><span className="pushpin" aria-hidden="true"/><strong style={taskStyle(preview)}>{preview.title}</strong><p style={taskStyle(preview)}>{preview.details}</p></div></div>
+      <button className="primary task-save"><Check size={17}/> {editingId?'Guardar cambios':'Guardar tarea'}</button>
+    </form>
+    <div className="task-board">{own.map((task,index)=><article className={'task-postit '+(task.note_color??'yellow')+(task.completed?' done':'')} style={{'--tilt':`${[-.7,.45,-.35,.65][index%4]}deg`} as React.CSSProperties} key={task.id}>
+      <span className="pushpin" aria-hidden="true"/>
+      <div className="postit-topline"><input aria-label={'Completar '+task.title} type="checkbox" checked={task.completed} onChange={()=>toggle(task)}/><time>{format(parseISO(task.task_date),"d MMM yyyy",{locale:es})}</time></div>
+      <h3 style={taskStyle(task)}>{task.title}</h3>{task.details&&<p style={taskStyle(task)}>{task.details}</p>}
+      <div className="postit-actions"><button className="icon-action edit" title="Editar tarea" onClick={()=>editTask(task)}><Pencil size={15}/></button><button className="icon-action delete" title="Eliminar tarea" onClick={()=>removeTask(task.id)}><Trash2 size={15}/></button></div>
+    </article>)}{!own.length&&<div className="empty-state panel"><ClipboardList/><p>Añade tu primera tarea.</p></div>}</div>
+  </section>
 }
 
-function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, demo, onChange, onConsultationsChange, reload }: { coverageProfiles: CoverageProfile[]; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; staff: Staff[]; consultations: Consultation[]; demo: boolean; onChange: React.Dispatch<React.SetStateAction<Staff[]>>; onConsultationsChange: React.Dispatch<React.SetStateAction<Consultation[]>>; reload: () => void }) {
+function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, demo, onChange, reload }: { coverageProfiles: CoverageProfile[]; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; staff: Staff[]; consultations: Consultation[]; demo: boolean; onChange: React.Dispatch<React.SetStateAction<Staff[]>>; reload: () => void }) {
   const [selectedPerson, setSelectedPerson] = useState<Staff | null>(null)
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -447,7 +692,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
   }
 
   return <section className="content-section">
-    <div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Equipo y consultas</h1><p>Vincula las cuentas registradas con su ficha, edita coberturas y gestiona quién forma parte del equipo.</p></div></div>
+    <div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Equipo</h1><p>Vincula las cuentas registradas con su ficha, edita coberturas y gestiona quién forma parte del equipo.</p></div></div>
     {teamFeedback && <p className="form-message">{teamFeedback}</p>}
 
     {!demo && pendingAccounts.length > 0 && <section className="panel">
@@ -469,7 +714,6 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
       </div>
     </section>}
 
-    <ConsultationManager consultations={consultations} demo={demo} onChange={onConsultationsChange} reload={reload} />
 
     <div className="team-grid">{staff.map(s => <article className={'person-card' + (s.active ? '' : ' inactive')} key={s.id}>
       <img src={MASCOTS.find(m => m.key === s.mascot_key)?.src} alt="" />
@@ -502,6 +746,38 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
   </section>
 }
 
+function SettingsView({onNavigate,onSave}:{onNavigate:(view:View)=>void;onSave:(config:PlanningConfig)=>Promise<string|null>}) {
+  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Configuración</h1><p>Consulta las condiciones actuales de planificación y accede a los ajustes de tu perfil.</p></div></div>
+    <div className="settings-grid">
+      <PlanningSettings onSave={onSave}/>
+      <section className="panel"><h2><Check size={20}/> Publicación del cuadrante</h2><p>Los cambios se guardan en borrador. El equipo ve la última versión publicada de cada mes.</p><p className="helper">Revisa la cobertura y publica desde el cuadrante cuando esté listo.</p><button className="soft-button" onClick={()=>onNavigate('history')}>Ver historial de cambios</button></section>
+
+      <section className="panel"><h2><Settings size={20}/> Otros ajustes</h2><div className="settings-shortcuts"><div><strong>Horarios y cobertura</strong><p>Las reglas, cadencias y suspensiones están en Consultas.</p><button className="soft-button" onClick={()=>onNavigate('consultations')}>Gestionar consultas</button></div><div><strong>Tu ficha personal</strong><p>Consulta tu perfil y cambia tu mascota.</p><button className="soft-button" onClick={()=>onNavigate('profile')}>Abrir mi ficha</button></div></div></section>
+    </div>
+  </section>
+}
+
+function PushSettings({ userId, demo }: { userId?: string | null; demo: boolean }) {
+  const [enabled, setEnabled] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    if (!demo && pushAvailable()) void getPushSubscription().then(subscription => setEnabled(Boolean(subscription))).catch(() => undefined)
+  }, [demo])
+  if (demo || !userId) return null
+  const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent)
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as Navigator & { standalone?: boolean }).standalone)
+  const toggle = async () => {
+    setBusy(true); setMessage('')
+    try {
+      if (enabled) { await disablePush(); setEnabled(false); setMessage('Notificaciones desactivadas en este dispositivo.') }
+      else { await enablePush(userId); setEnabled(true); setMessage('Recibirás los avisos de Guadalupe en este dispositivo.') }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'No se han podido cambiar las notificaciones.') }
+    finally { setBusy(false) }
+  }
+  return <div className="panel push-settings"><div><h2><Bell size={19} /> Avisos en el móvil</h2><p>Recibe una notificación cuando Guadalupe te envíe un aviso, incluso con EndoTurnos cerrado.</p>{iphone && !standalone && <p>En iPhone: abre esta página en Safari, toca Compartir → Añadir a pantalla de inicio y entra desde el nuevo icono.</p>}{!pushAvailable() && <p>Este navegador no admite notificaciones push. Usa Safari en iPhone o Chrome en Android.</p>}{message && <p role="status" className="form-message">{message}</p>}</div><button className="soft-button" onClick={toggle} disabled={busy || !pushAvailable() || (iphone && !standalone)}>{busy ? 'Un momento…' : enabled ? 'Desactivar notificaciones' : 'Activar notificaciones'}</button></div>
+}
+
 function ProfileView({ coverageProfile, onCoverageChange, consultations, profile, demo, onUpdated, reload }: { coverageProfile?: CoverageProfile; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; consultations: Consultation[]; profile: Staff; demo: boolean; onUpdated: (key: MascotKey) => void; reload: () => void }) {
   const [personalTab, setPersonalTab] = useState<'coverage'|'mascot'>(profile.role==='professional'?'coverage':'mascot')
   const [mascot, setMascot] = useState<MascotKey>(profile.mascot_key)
@@ -515,7 +791,7 @@ function ProfileView({ coverageProfile, onCoverageChange, consultations, profile
     onUpdated(mascot); setSaved(true); window.setTimeout(() => setSaved(false), 2200)
   }
   const selected = MASCOTS.find(m => m.key === mascot) ?? MASCOTS[0]
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu espacio</span><h1>Mi ficha personal</h1><p>Tu mascota y las consultas que puedes cubrir.</p></div></div>{profile.role==='professional'&&<div className="segmented personal-tabs"><button className={personalTab==='coverage'?'active':''} onClick={()=>setPersonalTab('coverage')}>Mis consultas</button><button className={personalTab==='mascot'?'active':''} onClick={()=>setPersonalTab('mascot')}>Mi mascota</button></div>}{personalTab==='coverage'&&profile.role==='professional'?<CoveragePreferences person={profile} consultations={consultations} profile={coverageProfile} demo={demo} onChange={onCoverageChange} reload={reload}/>:<div className="profile-layout"><div className="panel profile-preview"><img src={selected.src} alt={selected.name} /><span>{selected.greeting}</span><h2>{profile.display_name}</h2><p>@{profile.username} · {profile.role === 'supervisor' ? 'Supervisora' : 'Profesional'}</p></div><div className="panel"><h2>Elige tu compañera</h2><MascotPicker value={mascot} onChange={setMascot} /><button className="primary" onClick={save}>{saved ? <><Check /> Guardado</> : 'Guardar mascota'}</button></div></div>}</section>
+  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu espacio</span><h1>Mi ficha personal</h1><p>Tu mascota y las consultas que puedes cubrir.</p></div></div>{profile.role === 'professional' && <PushSettings userId={profile.user_id} demo={demo} />}{profile.role==='professional'&&<div className="segmented personal-tabs"><button className={personalTab==='coverage'?'active':''} onClick={()=>setPersonalTab('coverage')}>Mis consultas</button><button className={personalTab==='mascot'?'active':''} onClick={()=>setPersonalTab('mascot')}>Mi mascota</button></div>}{personalTab==='coverage'&&profile.role==='professional'?<CoveragePreferences person={profile} consultations={consultations} profile={coverageProfile} demo={demo} onChange={onCoverageChange} reload={reload}/>:<div className="profile-layout"><div className="panel profile-preview"><img src={selected.src} alt={selected.name} /><span>{selected.greeting}</span><h2>{profile.display_name}</h2><p>@{profile.username} · {profile.role === 'supervisor' ? 'Supervisora' : 'Profesional'}</p></div><div className="panel"><h2>Elige tu compañera</h2><MascotPicker value={mascot} onChange={setMascot} /><button className="primary" onClick={save}>{saved ? <><Check /> Guardado</> : 'Guardar mascota'}</button></div></div>}</section>
 }
 
 function MascotPicker({ value, onChange, compact = false }: { value: MascotKey; onChange: (m: MascotKey) => void; compact?: boolean }) {
