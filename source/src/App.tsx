@@ -1,4 +1,4 @@
-import { getPlanning, usePlanning, setPlanning, DEFAULT_PLANNING, clampDate, type PlanningConfig } from './lib/planningConfig'
+import { getPlanning, usePlanning, setPlanning, DEFAULT_PLANNING, type PlanningConfig } from './lib/planningConfig'
 import PlanningSettings from './components/PlanningSettings'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
@@ -10,7 +10,7 @@ import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, sameCoverageRule, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
-import type { CoverageException, RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast, ScheduledBroadcast } from './types'
+import type { CoverageException, RotaPublication, LockedMonth, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast, ScheduledBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
@@ -147,6 +147,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [assignments, setAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
   const [publishedAssignments, setPublishedAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
   const [publications, setPublications] = useState<RotaPublication[]>([])
+  const [lockedMonths, setLockedMonths] = useState<LockedMonth[]>([])
   const [requests, setRequests] = useState<ShiftRequest[]>([])
   const [tasks, setTasks] = useState<PersonalTask[]>([])
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
@@ -178,7 +179,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     const config=configResult.data as PlanningConfig
     const readAssignments=async(table:string)=>{const rows:Assignment[]=[];for(let offset=0;;offset+=500){const result=await supabase!.from(table).select('*').order('id').range(offset,offset+499);if(result.error)return {data:null,error:result.error};rows.push(...result.data as Assignment[]);if(result.data.length<500)return {data:rows,error:null}}}
     const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
-    const [c, a, r, t, b, h, cp, pub, published, exceptions, scheduled] = await Promise.all([
+    const [c, a, r, t, b, h, cp, pub, published, exceptions, scheduled, locks] = await Promise.all([
       supabase.from('et_consultations').select('*').eq('active', true).order('sort_order'),
       readAssignments(supervisor ? 'et_assignments' : 'et_published_assignments'),
       supabase.from('et_requests').select('*').order('created_at', { ascending: false }),
@@ -190,15 +191,17 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       readAssignments('et_published_assignments'),
       supervisor ? supabase.from('et_coverage_exceptions').select('*').order('created_at',{ascending:false}) : Promise.resolve({data:[],error:null}),
       supervisor ? supabase.from('et_scheduled_broadcasts').select('*').order('next_run_at') : Promise.resolve({data:[],error:null}),
+      supabase.from('et_locked_months').select('*'),
     ])
     if(sequence!==loadSequence.current)return
-    const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions,scheduled].find(result => result.error)
+    const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions,scheduled,locks].find(result => result.error)
     if (failed?.error) { setLoadError('No se han podido actualizar todos los datos. Pulsa Reintentar.'); return }
     setLoadError('')
     setPlanning(config)
     setCoverageExceptions((exceptions.data??[]) as CoverageException[])
     setScheduledBroadcasts((scheduled.data??[]) as ScheduledBroadcast[])
     setPublications((pub.data??[]) as RotaPublication[])
+    setLockedMonths((locks.data??[]) as LockedMonth[])
     setPublishedAssignments((published.data??[]) as Assignment[])
     if (cp.data) setCoverageProfiles(cp.data as CoverageProfile[])
     if (h.data) setHistory(h.data as AssignmentHistory[])
@@ -220,6 +223,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'et_locked_months' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
@@ -291,6 +295,16 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(demo){const next=rows.map(r=>({...r.target,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(items=>[...items,...next]);next.forEach(a=>addHistory(null,a));return null}
     const {error}=await supabase!.rpc('et_copy_assignments',{p_rows:rows.map(r=>({source_id:r.source.id,source_updated_at:r.source.updated_at,target_date:r.target.work_date,accept_review:reviewed}))});if(error)return error.message;await loadData();return null
   }
+  const lockMonth = async (month:string):Promise<string|null> => {
+    if(demo){
+      setLockedMonths(rows=>[...rows,{month:month+'-01',locked_at:new Date().toISOString(),locked_by:'demo'}])
+      return null
+    }
+    const {error}=await supabase!.from('et_locked_months').insert({month:month+'-01',locked_by:session!.user.id})
+    if(error)return error.message
+    await loadData()
+    return null
+  }
   const publishRota = async (month:string, preview:PublicationPreview):Promise<string|null> => {
     if(demo){setPublishedAssignments(rows=>[...rows.filter(a=>!a.work_date.startsWith(month)),...assignments.filter(a=>a.work_date.startsWith(month))]);setPublications(rows=>[...rows.filter(p=>p.month!==month+'-01'),{month:month+'-01',published_at:new Date().toISOString(),version:(rows.find(p=>p.month===month+'-01')?.version??0)+1,initial_snapshot:false}]);return null}
     const {data,error}=await supabase!.rpc('et_publish_rota',{p_month:month+'-01',p_fingerprint:preview.fingerprint})
@@ -324,7 +338,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     setCalendarFocusDate(null);setShiftSelection(null);setExceptionIssue(null);await loadData();return null
   }
   const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
-  const openCalendar = (date:string) => {setCalendarFocusDate(clampDate(date));setView('calendar')}
+  const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
   const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
 
   return <div className="app-shell">
@@ -344,14 +358,14 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??planning.start_date)}>Revisar publicación</button></div>}
       {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
       {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
-      {view === 'calendar' && <CalendarPanel suggestionContext={{staff,consultations,assignments,requests,profiles:coverageProfiles,exceptions:coverageExceptions,planning,fingerprint:'demo'}} onSuggestionSaved={async rows=>{if(demo){const added=rows.map(a=>({...a,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(current=>[...current,...added]);added.forEach(a=>addHistory(null,a))}else await loadData()}} onConsultations={()=>setView('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'calendar' && <CalendarPanel suggestionContext={{staff,consultations,assignments,requests,profiles:coverageProfiles,exceptions:coverageExceptions,planning,fingerprint:'demo'}} onSuggestionSaved={async rows=>{if(demo){const added=rows.map(a=>({...a,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(current=>[...current,...added]);added.forEach(a=>addHistory(null,a))}else await loadData()}} onConsultations={()=>setView('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} lockedMonths={lockedMonths} onLock={lockMonth} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
       {view === 'incidents' && isSupervisor && <CoverageIssuesPanel onException={setExceptionIssue} exceptions={coverageExceptions} onRevoke={revokeCoverageException} issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
       {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} scheduled={scheduledBroadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} onScheduledChange={setScheduledBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
       {exceptionIssue && <ExceptionDialog issue={exceptionIssue} onClose={()=>setExceptionIssue(null)} onSave={reason=>saveCoverageException(exceptionIssue,reason)}/> }
-      {shiftSelection && <ShiftEditor selection={shiftSelection} staff={staff} assignments={assignments} requests={requests} consultations={consultations} editable={isSupervisor} coverageProfiles={coverageProfiles} onClose={()=>setShiftSelection(null)} onSave={saveAssignment} onRemove={removeAssignment} />}
+      {shiftSelection && <ShiftEditor selection={shiftSelection} staff={staff} assignments={assignments} requests={requests} consultations={consultations} editable={isSupervisor&&!lockedMonths.some(m=>m.month===shiftSelection.date.slice(0,7)+'-01')} locked={lockedMonths.some(m=>m.month===shiftSelection.date.slice(0,7)+'-01')} coverageProfiles={coverageProfiles} onClose={()=>setShiftSelection(null)} onSave={saveAssignment} onRemove={removeAssignment} />}
       {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={loadData} />}
       {view === 'folders' && <FoldersView profile={activeProfile} staff={staff} demo={demo} />}
       {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={loadData} />}
