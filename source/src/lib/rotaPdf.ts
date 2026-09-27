@@ -3,25 +3,144 @@ import { addDays,endOfMonth,format,parseISO,startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { Assignment,Consultation,Staff } from '../types'
 import { getPlanning } from './planningConfig'
+
+type ShiftBand = 'morning' | 'afternoon'
+
+const isInBand = (assignment: Assignment, band: ShiftBand) =>
+  band === 'morning' ? assignment.start_time < '15:00' : assignment.start_time >= '15:00'
+
 export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date=new Date(),publicationLabel='') {
- const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});const margin=12;const width=396;const nameWidth=43;const dates:string[]=[]
+ const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'})
+ const margin=12
+ const pageWidth=420
+ const pageHeight=297
+ const tableWidth=396
+ const nameWidth=43
+ const dates:string[]=[]
  for(let d=startOfMonth(parseISO(month+'-01'));d<=endOfMonth(d)&&format(d,'yyyy-MM')===month;d=addDays(d,1))dates.push(format(d,'yyyy-MM-dd'))
- const cellWidth=(width-nameWidth)/dates.length;let y=34;let page=1
- const rows=staff.map(person=>dates.map(date=>assignments.filter(a=>a.work_date===date&&a.professional_id===person.id)))
- const weights=rows.map(perDay=>Math.max(1,...perDay.map(day=>day.length)))
- const legendRows=Math.ceil(consultations.length/3)
- const gridBottom=267-legendRows*5
- const naturalHeights=weights.map(weight=>Math.max(17,weight*11+4))
- const scale=Math.min(1,(gridBottom-48)/Math.max(1,naturalHeights.reduce((sum,height)=>sum+height,0)))
- const heading=()=>{doc.setFillColor('#245e46');doc.rect(0,0,420,23,'F');doc.setTextColor('#ffffff');doc.setFont('helvetica','bold');doc.setFontSize(19);doc.text(`EndoTurnos | ${format(parseISO(month+'-01'),'MMMM yyyy',{locale:es})}`,margin,14);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor('#496153');doc.text(`${staff.length===1?staff[0].display_name:'Cuadrante del equipo'} · Actualizado ${format(updatedAt,'dd/MM/yyyy HH:mm')}`,margin,29);y=34;doc.setFillColor('#e5eee5');doc.rect(margin,y,width,14,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('Profesional',margin+3,y+8);dates.forEach((date,i)=>{const x=margin+nameWidth+i*cellWidth;doc.setFontSize(7);doc.text(format(parseISO(date),'EEE',{locale:es}).slice(0,2),x+cellWidth/2,y+5,{align:'center'});doc.setFontSize(9);doc.text(date.slice(-2),x+cellWidth/2,y+10,{align:'center'})});y+=14}
- const footer=()=>{doc.setTextColor('#647368');doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(`${publicationLabel ? publicationLabel+' · ' : ''}Uso interno · Los cambios posteriores no aparecen en esta copia.`,margin,288);doc.text(`Página ${page}`,408,288,{align:'right'})}
+ const cellWidth=(tableWidth-nameWidth)/dates.length
+ const legendColumns=4
+ const legendRows=Math.max(1,Math.ceil(consultations.length/legendColumns))
+ const legendHeight=8+legendRows*6+7
+ const footerY=289
+ const legendBottom=footerY-6
+ const legendTop=legendBottom-legendHeight
+ const startY=34
+ const sectionHeaderHeight=9
+ const dateHeaderHeight=10
+ const sectionGap=5
+ const availableRowsHeight=Math.max(40,legendTop-startY-(sectionHeaderHeight+dateHeaderHeight)*2-sectionGap)
+ const rowHeight=Math.max(4.2,Math.min(10,availableRowsHeight/Math.max(1,staff.length*2)))
+
+ const heading=()=>{
+  doc.setFillColor('#245e46');doc.rect(0,0,pageWidth,23,'F')
+  doc.setTextColor('#ffffff');doc.setFont('helvetica','bold');doc.setFontSize(19)
+  doc.text(`EndoTurnos | ${format(parseISO(month+'-01'),'MMMM yyyy',{locale:es})}`,margin,14)
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor('#496153')
+  doc.text(`${staff.length===1?staff[0].display_name:'Cuadrante del equipo'} · Actualizado ${format(updatedAt,'dd/MM/yyyy HH:mm')}`,margin,29)
+ }
+
+ const drawSection=(band:ShiftBand,y:number)=>{
+  const label=band==='morning'?'Mañanas':'Tardes'
+  const hours=band==='morning'?'08:00–15:00':'15:00–20:00'
+  doc.setFillColor(band==='morning'?'#dfeadf':'#d6e5da')
+  doc.roundedRect(margin,y,tableWidth,sectionHeaderHeight,2,2,'F')
+  doc.setTextColor('#244d38');doc.setFont('helvetica','bold');doc.setFontSize(11)
+  doc.text(label,margin+4,y+6)
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor('#587063')
+  doc.text(hours,margin+tableWidth-4,y+6,{align:'right'})
+  y+=sectionHeaderHeight
+
+  doc.setFillColor('#edf3eb');doc.setDrawColor('#d6e0d5');doc.setLineWidth(.2)
+  doc.rect(margin,y,nameWidth,dateHeaderHeight,'FD')
+  doc.setTextColor('#2e513c');doc.setFont('helvetica','bold');doc.setFontSize(7.5)
+  doc.text('Profesional',margin+2.5,y+6.2)
+  dates.forEach((date,i)=>{
+   const x=margin+nameWidth+i*cellWidth
+   const weekend=[0,6].includes(parseISO(date).getDay())
+   const holiday=Boolean(getPlanning().holidays[date])
+   doc.setFillColor(holiday?'#fae8e0':weekend?'#f1f3ef':'#edf3eb')
+   doc.rect(x,y,cellWidth,dateHeaderHeight,'FD')
+   doc.setTextColor('#4d6458');doc.setFont('helvetica','normal');doc.setFontSize(5.8)
+   doc.text(format(parseISO(date),'EEE',{locale:es}).slice(0,1).toUpperCase(),x+cellWidth/2,y+3.7,{align:'center'})
+   doc.setFont('helvetica','bold');doc.setFontSize(7)
+   doc.text(String(Number(date.slice(-2))),x+cellWidth/2,y+8,{align:'center'})
+  })
+  y+=dateHeaderHeight
+
+  staff.forEach(person=>{
+   doc.setFillColor('#f4f7f2');doc.setDrawColor('#d6e0d5')
+   doc.rect(margin,y,nameWidth,rowHeight,'FD')
+   doc.setTextColor('#254c37');doc.setFont('helvetica','bold');doc.setFontSize(rowHeight<5.5?5.2:6.5)
+   const maxNameWidth=person.weekly_minutes<2100?nameWidth-16:nameWidth-4
+   doc.text(doc.splitTextToSize(person.display_name,maxNameWidth)[0]??person.display_name,margin+2,y+rowHeight*.62)
+   if(person.weekly_minutes<2100){
+    doc.setFillColor('#e3eee3');doc.roundedRect(margin+nameWidth-13.5,y+rowHeight*.22,11,rowHeight*.55,.8,.8,'F')
+    doc.setTextColor('#456250');doc.setFont('helvetica','bold');doc.setFontSize(4.5)
+    doc.text('RED 1/3',margin+nameWidth-8,y+rowHeight*.59,{align:'center'})
+   }
+
+   dates.forEach((date,i)=>{
+    const x=margin+nameWidth+i*cellWidth
+    const weekend=[0,6].includes(parseISO(date).getDay())
+    const holiday=Boolean(getPlanning().holidays[date])
+    doc.setFillColor(holiday?'#fae8e0':weekend?'#f2f3ef':'#ffffff')
+    doc.rect(x,y,cellWidth,rowHeight,'FD')
+    const items=assignments.filter(a=>a.work_date===date&&a.professional_id===person.id&&isInBand(a,band))
+    if(!items.length)return
+    const gap=.35
+    const badgeHeight=Math.max(2.2,Math.min(4.6,(rowHeight-gap*(items.length+1))/items.length))
+    items.forEach((a,j)=>{
+     const c=consultations.find(c=>c.id===a.consultation_id)
+     const top=y+gap+j*(badgeHeight+gap)
+     if(top+badgeHeight>y+rowHeight-.2)return
+     doc.setFillColor(c?.color??'#50755a')
+     doc.roundedRect(x+.45,top,cellWidth-.9,badgeHeight,.6,.6,'F')
+     doc.setTextColor('#ffffff');doc.setFont('helvetica','bold')
+     doc.setFontSize(Math.max(3.8,Math.min(6.6,badgeHeight*1.35)))
+     doc.text(c?.short_label??a.consultation_id.slice(0,5),x+cellWidth/2,top+badgeHeight*.7,{align:'center',maxWidth:cellWidth-1.2})
+    })
+   })
+   y+=rowHeight
+  })
+  return y
+ }
+
+ const drawLegend=(y:number)=>{
+  doc.setTextColor('#365340');doc.setFont('helvetica','bold');doc.setFontSize(8.5)
+  doc.text('Leyenda',margin,y+4)
+  const colWidth=tableWidth/legendColumns
+  consultations.forEach((c,index)=>{
+   const col=index%legendColumns
+   const row=Math.floor(index/legendColumns)
+   const x=margin+col*colWidth
+   const lineY=y+9+row*6
+   doc.setFillColor(c.color);doc.roundedRect(x,lineY-3.1,5,3.5,.7,.7,'F')
+   doc.setTextColor('#355043');doc.setFont('helvetica','bold');doc.setFontSize(6.5)
+   doc.text(c.short_label,x+7,lineY-.4)
+   doc.setFont('helvetica','normal');doc.setFontSize(6.2);doc.setTextColor('#607166')
+   doc.text(c.label,x+18,lineY-.4,{maxWidth:colWidth-20})
+  })
+  const noteY=y+9+legendRows*6
+  doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor('#647368')
+  doc.text('Fondo salmón: festivo · Celdas vacías: sin asignación · Las asignaciones provisionales deben revisarse en EndoTurnos.',margin,noteY)
+ }
+
+ const footer=()=>{
+  doc.setTextColor('#647368');doc.setFont('helvetica','normal');doc.setFontSize(7)
+  doc.text(`${publicationLabel ? publicationLabel+' · ' : ''}Uso interno · Los cambios posteriores no aparecen en esta copia.`,margin,footerY)
+ }
+
  heading()
- for(const [rowIndex,person] of staff.entries()){const perDay=rows[rowIndex];const maxRows=weights[rowIndex];const rowHeight=naturalHeights[rowIndex]*scale
- doc.setDrawColor('#d6e0d5');doc.setLineWidth(.2);doc.setFillColor('#f2f6ef');doc.rect(margin,y,nameWidth,rowHeight,'FD');doc.setTextColor('#254c37');doc.setFont('helvetica','bold');doc.setFontSize(8);const names=doc.splitTextToSize(person.display_name,nameWidth-5);doc.text(names,margin+2,y+6);if(person.weekly_minutes<2100){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text('Reducción 1/3',margin+2,y+rowHeight-3)}
- dates.forEach((date,i)=>{const x=margin+nameWidth+i*cellWidth;const weekend=[0,6].includes(parseISO(date).getDay());doc.setFillColor(getPlanning().holidays[date]?'#fae8e0':weekend?'#f2f3ef':'#ffffff');doc.rect(x,y,cellWidth,rowHeight,'FD');perDay[i].forEach((a,j)=>{const c=consultations.find(c=>c.id===a.consultation_id);const slot=rowHeight/maxRows;const top=y+j*slot+.6;const badge=Math.min(5,slot*.48);doc.setFillColor(c?.color??'#50755a');doc.roundedRect(x+.6,top,cellWidth-1.2,badge,.8,.8,'F');doc.setTextColor('#ffffff');doc.setFont('helvetica','bold');doc.setFontSize(Math.min(7.5,Math.max(4.5,badge*1.5)));doc.text(`${c?.short_label??a.consultation_id.slice(0,5)}${a.provisional?'*':''}`,x+cellWidth/2,top+badge*.7,{align:'center',maxWidth:cellWidth-1.5});doc.setTextColor('#354c3e');doc.setFont('helvetica','normal');doc.setFontSize(Math.min(5.8,Math.max(4,slot*.5)));doc.text(`${a.start_time.slice(0,5)}-${a.end_time.slice(0,5)}`,x+cellWidth/2,top+badge+Math.min(3,slot*.3),{align:'center',maxWidth:cellWidth-1.2})})});y+=rowHeight}
- y=Math.max(y+4,gridBottom+3);doc.setTextColor('#365340');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('Leyenda',margin,y)
- consultations.forEach((c,index)=>{const x=margin+(index%3)*132;const lineY=y+6+Math.floor(index/3)*5;doc.setFillColor(c.color);doc.rect(x,lineY-2.7,3,3,'F');doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text(`${c.short_label}: ${c.label}`,x+5,lineY,{maxWidth:124})})
- doc.setFontSize(8);doc.text('* Turno provisional. Fondo salmón: festivo. Las celdas vacías indican ausencia de asignación.',margin,281);footer()
+ let y=startY
+ y=drawSection('morning',y)
+ y+=sectionGap
+ y=drawSection('afternoon',y)
+ drawLegend(Math.max(y+4,legendTop))
+ footer()
  return doc
 }
-export function downloadRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date,publicationLabel=''){createRotaPdf(month,staff,assignments,consultations,updatedAt).save(`EndoTurnos_${month}_${staff.length===1?'individual':'equipo'}.pdf`)}
+
+export function downloadRotaPdf(month:string,staff:Staff[],assignments:Assignment[],consultations:Consultation[],updatedAt:Date,publicationLabel=''){
+ createRotaPdf(month,staff,assignments,consultations,updatedAt,publicationLabel).save(`EndoTurnos_${month}_${staff.length===1?'individual':'equipo'}.pdf`)
+}
