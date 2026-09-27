@@ -14,7 +14,7 @@ export function minimumCoverage(rows: Assignment[], start: string, end: string):
   const points = [...new Set([start, end, ...rows.flatMap(a => [a.start_time.slice(0,5), a.end_time.slice(0,5)])])].filter(p => p >= start && p <= end).sort()
   return Math.min(...points.slice(0,-1).map((p,i) => new Set(rows.filter(a => a.start_time.slice(0,5) <= p && a.end_time.slice(0,5) >= points[i+1]).map(a => a.professional_id)).size))
 }
-export function buildCoverageIssues(assignments: Assignment[], consultations: Consultation[], requests: ShiftRequest[] = [], from = getPlanning().start_date, until = getPlanning().end_date, exceptions: CoverageException[] = []): CoverageIssue[] {
+export function buildCoverageIssues(assignments: Assignment[], consultations: Consultation[], requests: ShiftRequest[] = [], from = getPlanning().start_date, until = getPlanning().end_date, exceptions: CoverageException[] = [], holidays = getPlanning().holidays): CoverageIssue[] {
   const issues: CoverageIssue[] = []
   for (const c of consultations.filter(c => c.active)) {
     for (const rule of c.coverage_rules ?? defaultCoverageRules(c.id)) {
@@ -22,7 +22,7 @@ export function buildCoverageIssues(assignments: Assignment[], consultations: Co
       const candidates: string[] = []
       for (let d = parseISO(from); iso(d) <= until; d = addDays(d,1)) {
         const date = iso(d)
-        if (getPlanning().holidays[date] || !rule.weekdays.includes(getDay(d)) || !isOpen(date,rule)) continue
+        if (holidays[date] || !rule.weekdays.includes(getDay(d)) || !isOpen(date,rule)) continue
         const week = differenceInCalendarWeeks(d, parseISO(rule.anchor_date), {weekStartsOn:1})
         if (!rule.monthly && ((week % rule.every_weeks) + rule.every_weeks) % rule.every_weeks !== 0) continue
         candidates.push(date)

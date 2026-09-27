@@ -815,3 +815,6 @@ input[type="checkbox"], input[type="radio"] { accent-color:var(--green); }
 @media(prefers-reduced-motion:reduce) {
  *, *::before, *::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; scroll-behavior:auto!important; }
 }
+
+/* Consultation preferences and monthly draft suggestions */
+.secondary-picker{display:flex;flex-wrap:wrap;gap:10px 20px}.secondary-picker label,.suggestion-row{display:flex;align-items:center;gap:10px}.secondary-picker input,.suggestion-row input{width:20px;min-height:20px;flex-shrink:0}.suggestion-list{max-height:42vh;overflow:auto;margin:16px 0}.suggestion-row{padding:12px 4px;border-bottom:1px solid #d9e3dc}.suggestion-row span{min-width:0}.suggestion-row small{display:block;margin-top:4px;line-height:1.5}.preferences-panel .rule-editor{margin-top:16px}

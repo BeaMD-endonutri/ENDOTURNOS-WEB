@@ -21,6 +21,8 @@ export interface Consultation {
   active: boolean
   default_start_time?: string
   default_end_time?: string
+  preferred_staff_id?: string | null
+  secondary_staff_ids?: string[]
   coverage_rules?: CoverageRule[] | null
 }
 
@@ -125,7 +127,12 @@ export interface AssignmentHistory {
   after_data: Assignment | null
 }
 
+export interface WorkCadence {
+ id:string; weekdays:number[]; start_time:string; end_time:string; every_weeks:number; anchor_date:string; valid_from:string; valid_until:string
+}
+
 export interface CoverageProfile {
+  work_cadences?: WorkCadence[] | null
   staff_id: string
   consultation_ids: string[]
   updated_at?: string
