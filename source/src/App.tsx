@@ -335,6 +335,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
       {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
       {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
+      {view === 'home' && <HomeTaskStrip tasks={tasks} profile={activeProfile} demo={demo} onChange={setTasks} reload={loadData} onOpenTasks={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
       {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??planning.start_date)}>Revisar publicación</button></div>}
       {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
       {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
@@ -428,17 +429,96 @@ function BroadcastsView({ broadcasts, staff, profile, isSupervisor, demo, onChan
   return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Comunicación del equipo</span><h1>Avisos y recordatorios</h1><p>Los mensajes aparecen al instante y la campanita suena cuando EndoTurnos está abierto.</p></div><button className="soft-button" onClick={playBell}><Volume2 size={17} /> Probar campanita</button></div>{isSupervisor && <form className={`panel broadcast-form ${editingId ? 'editing' : ''}`} onSubmit={submit}><div className="request-form-heading"><div><h2><Megaphone /> {editingId ? 'Editar aviso' : 'Nuevo aviso'}</h2><p>Selecciona a todo el equipo o sólo a las personas que deban recibirlo.</p></div>{editingId && <button type="button" className="text-button inline" onClick={resetForm}><X size={16} /> Cancelar</button>}</div><div className="broadcast-fields"><label>Título<input required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} /></label><label>Mensaje<textarea required minLength={3} maxLength={1200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Escribe aquí el recordatorio…" /></label></div><div className="recipient-heading"><strong>Destinatarios · {selected.size}</strong><button type="button" className="text-button inline" onClick={selectEveryone}>Todo el equipo</button></div><div className="recipient-picker">{professionals.map(person => <label key={person.id} className={selected.has(person.id) ? 'selected' : ''}><input type="checkbox" checked={selected.has(person.id)} onChange={() => toggleRecipient(person.id)} /><img src={MASCOTS.find(mascot => mascot.key === person.mascot_key)?.src} alt="" /><span>{person.display_name}</span></label>)}</div>{feedback && <p className="form-message">{feedback}</p>}<button className="primary" disabled={!message.trim() || !selected.size}>{editingId ? <Pencil size={17} /> : <Megaphone size={17} />} {editingId ? 'Guardar cambios' : 'Enviar aviso'}</button></form>}<div className="broadcast-list">{broadcasts.map(item => { const ownRecipient = item.et_broadcast_recipients.find(recipient => recipient.staff_id === profile.id); const unread = Boolean(ownRecipient && !ownRecipient.read_at); const recipients = item.et_broadcast_recipients.map(recipient => staff.find(person => person.id === recipient.staff_id)?.display_name).filter(Boolean); return <article className={`panel broadcast-card ${unread ? 'unread' : ''}`} key={item.id}><div className="broadcast-icon"><Bell /></div><div><div className="broadcast-meta"><span>{unread ? 'Nuevo' : 'Aviso'}</span><time>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time></div><h2>{item.title}</h2><p>{item.message}</p>{isSupervisor && <small>Para: {recipients.length === professionals.length ? 'todo el equipo' : recipients.join(', ')}</small>}</div><div className="card-actions">{unread && <button className="soft-button" onClick={() => markRead(item.id)}><Check size={16} /> Leído</button>}{isSupervisor && <button className="icon-action edit" title="Editar aviso" onClick={() => editBroadcast(item)}><Pencil size={16} /> Editar</button>}<button className="icon-action delete" title={isSupervisor ? 'Eliminar aviso para todos' : 'Eliminar aviso'} onClick={() => removeBroadcast(item.id)}><Trash2 size={16} /> Eliminar</button></div></article> })}{!broadcasts.length && <div className="empty-state panel"><Megaphone /><p>Todavía no hay avisos.</p></div>}</div></section>
 }
 
+function taskFont(font: PersonalTask['font_family']) {
+  return font === 'fraunces' ? "'Fraunces', serif" : font === 'caveat' ? "'Caveat', cursive" : font === 'dm-sans' ? "'DM Sans', sans-serif" : "'Nunito', sans-serif"
+}
+
+function taskStyle(task: PersonalTask): React.CSSProperties {
+  return {
+    fontFamily: taskFont(task.font_family ?? 'nunito'),
+    fontWeight: task.is_bold ? 700 : 500,
+    fontStyle: task.is_italic ? 'italic' : 'normal',
+    textDecoration: task.is_underline ? 'underline' : 'none',
+  }
+}
+
+function HomeTaskStrip({ tasks, profile, demo, onChange, reload, onOpenTasks }: { tasks: PersonalTask[]; profile: Staff; demo: boolean; onChange: React.Dispatch<React.SetStateAction<PersonalTask[]>>; reload: () => void; onOpenTasks: () => void }) {
+  const own = tasks.filter(task => task.professional_id === profile.id).sort((a,b) => a.task_date.localeCompare(b.task_date))
+  const pending = own.filter(task => !task.completed)
+  const visible = (pending.length ? pending : own).slice(0, 6)
+  const toggle = async (task: PersonalTask) => {
+    if (demo) onChange(rows => rows.map(row => row.id === task.id ? { ...row, completed: !row.completed } : row))
+    else { await supabase?.from('et_tasks').update({ completed: !task.completed }).eq('id', task.id); await reload() }
+  }
+  return <section className="home-task-strip" aria-label="Mis tareas">
+    <div className="home-task-heading"><div><span className="eyebrow">Mis recordatorios</span><h2>Post-its de tareas</h2></div><button className="soft-button" onClick={onOpenTasks}><Plus size={16}/> Añadir tarea</button></div>
+    {visible.length ? <div className="home-postits">{visible.map((task,index)=><article key={task.id} className={'mini-postit '+(task.note_color??'yellow')+(task.completed?' done':'')} style={{'--tilt':`${[-1.2,.7,-.5,1,-.8,.4][index%6]}deg`} as React.CSSProperties}>
+      <span className="pushpin" aria-hidden="true"/>
+      <div className="postit-topline"><input aria-label={'Completar '+task.title} type="checkbox" checked={task.completed} onChange={()=>toggle(task)}/><time>{format(parseISO(task.task_date),'d MMM',{locale:es})}</time></div>
+      <strong style={taskStyle(task)}>{task.title}</strong>
+      {task.details && <p style={taskStyle(task)}>{task.details}</p>}
+    </article>)}</div> : <button className="empty-postit" onClick={onOpenTasks}><span className="pushpin" aria-hidden="true"/><Plus size={18}/><span>Añade tu primera tarea</span></button>}
+  </section>
+}
+
 function TasksView({ tasks, profile, demo, focusNonce, onChange, reload }: { tasks: PersonalTask[]; profile: Staff; demo: boolean; focusNonce: number; onChange: React.Dispatch<React.SetStateAction<PersonalTask[]>>; reload: () => void }) {
-  const [title, setTitle] = useState(''); const [date, setDate] = useState(todayIso); const [editingId, setEditingId] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
+  const [details, setDetails] = useState('')
+  const [date, setDate] = useState(todayIso)
+  const [color, setColor] = useState<PersonalTask['note_color']>('yellow')
+  const [fontFamily, setFontFamily] = useState<PersonalTask['font_family']>('nunito')
+  const [bold, setBold] = useState(false)
+  const [italic, setItalic] = useState(false)
+  const [underline, setUnderline] = useState(false)
+  const [completed, setCompleted] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const taskInput = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (focusNonce > 0) taskInput.current?.focus() }, [focusNonce])
-  const own = tasks.filter(t => t.professional_id === profile.id)
-  const reset = () => { setTitle(''); setDate(todayIso); setEditingId(null) }
-  const save = async (e: React.FormEvent) => { e.preventDefault(); if (editingId) { const content = { task_date: date, title: title.trim() }; if (demo) onChange(p => p.map(task => task.id === editingId ? { ...task, ...content } : task)); else { await supabase?.from('et_tasks').update(content).eq('id', editingId); await reload() } reset(); return } const row = { professional_id: profile.id, task_date: date, title: title.trim(), completed: false }; if (demo) onChange(p => [...p, { ...row, id: crypto.randomUUID() }]); else { await supabase?.from('et_tasks').insert(row); await reload() } reset() }
-  const editTask = (task: PersonalTask) => { setEditingId(task.id); setTitle(task.title); setDate(task.task_date); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  const removeTask = async (id: string) => { if (!window.confirm(PERMANENT_DELETE_PROMPT)) return; if (demo) onChange(p => p.filter(task => task.id !== id)); else { await supabase?.from('et_tasks').delete().eq('id', id); await reload() } if (editingId === id) reset() }
-  const toggle = async (t: PersonalTask) => { if (demo) onChange(p => p.map(x => x.id === t.id ? { ...x, completed: !x.completed } : x)); else { await supabase?.from('et_tasks').update({ completed: !t.completed }).eq('id', t.id); reload() } }
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu recordatorio personal</span><h1>Tareas pendientes</h1><p>Sólo tú puedes ver, editar y eliminar estas tareas.</p></div></div><form className={`quick-task panel ${editingId ? 'editing' : ''}`} onSubmit={save}><input ref={taskInput} required value={title} onChange={e => setTitle(e.target.value)} placeholder="Escribe una tarea pendiente…" /><input required type="date" value={date} onChange={e => setDate(e.target.value)} /><button className="primary">{editingId ? <Pencil /> : <Plus />} {editingId ? 'Guardar' : 'Añadir'}</button>{editingId && <button type="button" className="soft-button" onClick={reset}><X size={16} /> Cancelar</button>}</form><div className="task-days">{[...new Set(own.map(t => t.task_date))].sort().map(day => <section className="panel" key={day}><h2>{format(parseISO(day), "EEEE d 'de' MMMM", { locale: es })}</h2>{own.filter(t => t.task_date === day).map(t => <div className={`task-row ${t.completed ? 'done' : ''}`} key={t.id}><input aria-label={`Completar ${t.title}`} type="checkbox" checked={t.completed} onChange={() => toggle(t)} /><span>{t.title}</span><div className="inline-actions"><button className="icon-action edit" title="Editar tarea" onClick={() => editTask(t)}><Pencil size={15} /> Editar</button><button className="icon-action delete" title="Eliminar tarea" onClick={() => removeTask(t.id)}><Trash2 size={15} /> Eliminar</button></div></div>)}</section>)}{!own.length && <div className="empty-state"><ClipboardList /><p>Añade tu primera tarea del mes.</p></div>}</div></section>
+  useEffect(() => { if (focusNonce > 0) { taskInput.current?.focus(); window.scrollTo({ top: 0, behavior: 'smooth' }) } }, [focusNonce])
+  const own = tasks.filter(t => t.professional_id === profile.id).sort((a,b) => a.task_date.localeCompare(b.task_date))
+  const reset = () => { setTitle(''); setDetails(''); setDate(todayIso); setColor('yellow'); setFontFamily('nunito'); setBold(false); setItalic(false); setUnderline(false); setCompleted(false); setEditingId(null) }
+  const payload = () => ({ task_date: date, title: title.trim(), details: details.trim(), note_color: color, font_family: fontFamily, is_bold: bold, is_italic: italic, is_underline: underline, completed })
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const content = payload()
+    if (editingId) {
+      if (demo) onChange(rows => rows.map(task => task.id === editingId ? { ...task, ...content } : task))
+      else { await supabase?.from('et_tasks').update(content).eq('id', editingId); await reload() }
+    } else {
+      const row = { professional_id: profile.id, ...content }
+      if (demo) onChange(rows => [...rows, { ...row, id: crypto.randomUUID() }])
+      else { await supabase?.from('et_tasks').insert(row); await reload() }
+    }
+    reset()
+  }
+  const editTask = (task: PersonalTask) => {
+    setEditingId(task.id); setTitle(task.title); setDetails(task.details??''); setDate(task.task_date); setColor(task.note_color??'yellow'); setFontFamily(task.font_family??'nunito'); setBold(Boolean(task.is_bold)); setItalic(Boolean(task.is_italic)); setUnderline(Boolean(task.is_underline)); setCompleted(task.completed); window.scrollTo({ top: 0, behavior: 'smooth' }); window.setTimeout(()=>taskInput.current?.focus(),250)
+  }
+  const removeTask = async (id: string) => { if (!window.confirm(PERMANENT_DELETE_PROMPT)) return; if (demo) onChange(rows => rows.filter(task => task.id !== id)); else { await supabase?.from('et_tasks').delete().eq('id', id); await reload() } if (editingId === id) reset() }
+  const toggle = async (task: PersonalTask) => { if (demo) onChange(rows => rows.map(row => row.id === task.id ? { ...row, completed: !row.completed } : row)); else { await supabase?.from('et_tasks').update({ completed: !task.completed }).eq('id', task.id); await reload() } }
+  const preview: PersonalTask = { id:'preview', professional_id:profile.id, task_date:date, title:title||'Así se verá tu tarea', details:details||'Puedes escribir varias líneas y párrafos.', completed, note_color:color, font_family:fontFamily, is_bold:bold, is_italic:italic, is_underline:underline }
+  return <section className="content-section tasks-postit-page">
+    <div className="section-heading"><div><span className="eyebrow">Tu recordatorio personal</span><h1>Mis tareas</h1><p>Crea post-its a tu gusto. Sólo tú puedes verlos, editarlos y eliminarlos.</p></div></div>
+    <form className={'task-composer postit '+color+(editingId?' editing':'')} onSubmit={save}>
+      <span className="pushpin large" aria-hidden="true"/>
+      <div className="task-composer-head"><div><span className="eyebrow">{editingId?'Editando post-it':'Nuevo post-it'}</span><h2>{editingId?'Editar tarea':'Añadir tarea'}</h2></div>{editingId&&<button type="button" className="icon-action edit" title="Cancelar edición" onClick={reset}><X size={17}/></button>}</div>
+      <label>Título<input ref={taskInput} required maxLength={120} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Ej. Revisar analíticas"/></label>
+      <label>Descripción<textarea maxLength={1500} value={details} onChange={e=>setDetails(e.target.value)} placeholder={'Escribe aquí todo lo que necesites…\n\nPuedes separar el texto en varios párrafos.'}/></label>
+      <div className="task-format-row">
+        <div><span className="field-label">Formato</span><div className="format-buttons"><button type="button" aria-pressed={bold} className={bold?'active':''} onClick={()=>setBold(v=>!v)}><b>B</b></button><button type="button" aria-pressed={italic} className={italic?'active':''} onClick={()=>setItalic(v=>!v)}><i>I</i></button><button type="button" aria-pressed={underline} className={underline?'active':''} onClick={()=>setUnderline(v=>!v)}><u>U</u></button></div></div>
+        <label>Tipo de letra<select value={fontFamily} onChange={e=>setFontFamily(e.target.value as PersonalTask['font_family'])}><option value="nunito">Nunito</option><option value="dm-sans">DM Sans</option><option value="fraunces">Fraunces</option><option value="caveat">Manuscrita</option></select></label>
+        <label>Fecha<input required type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>
+      </div>
+      <div className="color-picker"><span className="field-label">Color del post-it</span><div>{(['yellow','rose','sage','blue','lavender','cream'] as PersonalTask['note_color'][]).map(name=><button key={name} type="button" aria-label={'Color '+name} aria-pressed={color===name} className={'color-swatch '+name+(color===name?' selected':'')} onClick={()=>setColor(name)}/>)}</div></div>
+      <div className="composer-bottom"><label className="task-completed-check"><input type="checkbox" checked={completed} onChange={e=>setCompleted(e.target.checked)}/><span>Marcar como completada</span></label><div className={'task-preview mini-postit '+color+(completed?' done':'')}><span className="pushpin" aria-hidden="true"/><strong style={taskStyle(preview)}>{preview.title}</strong><p style={taskStyle(preview)}>{preview.details}</p></div></div>
+      <button className="primary task-save"><Check size={17}/> {editingId?'Guardar cambios':'Guardar tarea'}</button>
+    </form>
+    <div className="task-board">{own.map((task,index)=><article className={'task-postit '+(task.note_color??'yellow')+(task.completed?' done':'')} style={{'--tilt':`${[-.7,.45,-.35,.65][index%4]}deg`} as React.CSSProperties} key={task.id}>
+      <span className="pushpin" aria-hidden="true"/>
+      <div className="postit-topline"><input aria-label={'Completar '+task.title} type="checkbox" checked={task.completed} onChange={()=>toggle(task)}/><time>{format(parseISO(task.task_date),"d MMM yyyy",{locale:es})}</time></div>
+      <h3 style={taskStyle(task)}>{task.title}</h3>{task.details&&<p style={taskStyle(task)}>{task.details}</p>}
+      <div className="postit-actions"><button className="icon-action edit" title="Editar tarea" onClick={()=>editTask(task)}><Pencil size={15}/></button><button className="icon-action delete" title="Eliminar tarea" onClick={()=>removeTask(task.id)}><Trash2 size={15}/></button></div>
+    </article>)}{!own.length&&<div className="empty-state panel"><ClipboardList/><p>Añade tu primera tarea.</p></div>}</div>
+  </section>
 }
 
 function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, demo, onChange, reload }: { coverageProfiles: CoverageProfile[]; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; staff: Staff[]; consultations: Consultation[]; demo: boolean; onChange: React.Dispatch<React.SetStateAction<Staff[]>>; reload: () => void }) {
