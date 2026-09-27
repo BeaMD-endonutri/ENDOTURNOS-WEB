@@ -33,4 +33,20 @@ describe('workspace interactions',()=>{
   await click('Buscar cobertura');expect(host.querySelector('[aria-label="Cerrar panel"]')).not.toBeNull()
  })
 
+ it('resolves a Planta warning with a reason and can restore it from the exception register',async()=>{
+  await enter();await act(async()=>host.querySelector<HTMLButtonElement>('.attention-button.coverage')!.click())
+  const before=Number(host.querySelector('.attention-button.coverage b')!.textContent)
+  await choose(label('Tipo de incidencia') as HTMLSelectElement,'warning')
+  await click('Añadir excepción')
+  expect(button('Guardar excepción y resolver').disabled).toBe(true)
+  await change(label('Motivo de la excepción') as HTMLTextAreaElement,'No hay otra enfermera disponible para esta franja')
+  await act(async()=>host.querySelector('[aria-labelledby="exception-title"] form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  expect(host.querySelector('[aria-labelledby="exception-title"]')).toBeNull()
+  expect(Number(host.querySelector('.attention-button.coverage b')!.textContent)).toBe(before-1)
+  expect(host.querySelector('.exception-register')!.textContent).toContain('No hay otra enfermera disponible')
+  vi.spyOn(window,'confirm').mockReturnValue(true);await click('Retirar excepción')
+  expect(Number(host.querySelector('.attention-button.coverage b')!.textContent)).toBe(before)
+  expect(host.querySelector('.exception-register')!.textContent).toContain('Retirada')
+ })
+
 })

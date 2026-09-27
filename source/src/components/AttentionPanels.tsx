@@ -1,3 +1,5 @@
+import { ExceptionRegister } from './CoverageExceptions'
+import type { CoverageException } from '../types'
 import { useState } from 'react'
 import { AlertTriangle, Bell, CheckCircle2, Megaphone } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
@@ -18,7 +20,7 @@ export function NotificationsPanel({broadcasts,requests,onBroadcasts,onRequest}:
  </section>
 }
 
-export function CoverageIssuesPanel({issues,onAssign,onCalendar}:{issues:CoverageIssue[];onAssign:(selection:ShiftSelection)=>void;onCalendar:(date:string)=>void}) {
+export function CoverageIssuesPanel({issues,onAssign,onCalendar,onException,exceptions=[],onRevoke}:{onException?:(issue:CoverageIssue)=>void;exceptions?:CoverageException[];onRevoke?:(id:string)=>Promise<string|null>;issues:CoverageIssue[];onAssign:(selection:ShiftSelection)=>void;onCalendar:(date:string)=>void}) {
  const [month,setMonth]=useState('all')
  const [severity,setSeverity]=useState('all')
  const [limit,setLimit]=useState(20)
@@ -27,9 +29,9 @@ export function CoverageIssuesPanel({issues,onAssign,onCalendar}:{issues:Coverag
  return <section className="content-section coverage-issues-page"><div className="section-heading"><div><span className="eyebrow">Planificación en borrador</span><h1>Incidencias de cobertura</h1><p>{issues.length} incidencias en el periodo disponible. Se actualizan al corregir los turnos o las reglas de cobertura.</p></div></div>
   <div className="panel"><div className="attention-filters"><label>Mes<select value={month} onChange={e=>{setMonth(e.target.value);setLimit(20)}}><option value="all">Todo el periodo</option>{months.map(m=><option key={m} value={m}>{format(parseISO(m+'-01'),'MMMM yyyy',{locale:es})}</option>)}</select></label><label>Tipo de incidencia<select value={severity} onChange={e=>{setSeverity(e.target.value);setLimit(20)}}><option value="all">Todas</option><option value="critical">Sin cobertura</option><option value="warning">Cobertura insuficiente o turnos suspendidos</option></select></label></div>
    <p role="status">{filtered.length} {filtered.length===1?'incidencia':'incidencias'} en esta selección.</p>
-   {filtered.slice(0,limit).map(i=><article className={`priority-item ${i.severity}`} key={i.id}><AlertTriangle size={19}/><div><span className={`queue-level ${i.severity==='critical'?'urgent':'review'}`}>{i.severity==='critical'?'Sin cobertura':'Revisar'}</span><strong>{i.title}</strong><small>{format(parseISO(i.date),'EEE d MMM',{locale:es})} · {i.detail}</small></div><div className="attention-actions"><button className="soft-button" onClick={()=>onAssign({date:i.date,consultationId:i.consultationId,startTime:i.startTime,endTime:i.endTime,findCoverage:i.kind==='shortage'})}>{i.kind==='shortage'?'Buscar cobertura':'Revisar turno'}</button><button className="text-button inline" onClick={()=>onCalendar(i.date)}>Ver día</button></div></article>)}
+   {filtered.slice(0,limit).map(i=><article className={`priority-item ${i.severity}`} key={i.id}><AlertTriangle size={19}/><div><span className={`queue-level ${i.severity==='critical'?'urgent':'review'}`}>{i.severity==='critical'?'Sin cobertura':'Revisar'}</span><strong>{i.title}</strong><small>{format(parseISO(i.date),'EEE d MMM',{locale:es})} · {i.detail}</small></div><div className="attention-actions"><button className="soft-button" onClick={()=>onAssign({date:i.date,consultationId:i.consultationId,startTime:i.startTime,endTime:i.endTime,findCoverage:i.kind==='shortage'})}>{i.kind==='shortage'?'Buscar cobertura':'Revisar turno'}</button>{i.exceptionRule&&onException&&<button className="soft-button" onClick={()=>onException(i)}>Añadir excepción</button>}<button className="text-button inline" onClick={()=>onCalendar(i.date)}>Ver día</button></div></article>)}
    {filtered.length>limit&&<button className="soft-button" onClick={()=>setLimit(n=>n+20)}>Mostrar más incidencias</button>}
    {!filtered.length&&<p className="all-clear"><CheckCircle2 size={18}/>{issues.length?'No hay incidencias con estos filtros.':'No hay incidencias de cobertura en el periodo disponible.'}</p>}
-  </div>
+  </div>{onRevoke&&<ExceptionRegister exceptions={exceptions} onRevoke={onRevoke}/>}
  </section>
 }

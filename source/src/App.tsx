@@ -5,15 +5,16 @@ import { es } from 'date-fns/locale'
 import { Settings, Stethoscope, Home, History, AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, Clock3, LogOut, Megaphone, Menu, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, Volume2, X } from 'lucide-react'
 import { CONSULTATIONS, DEMO_STAFF, HOLIDAYS, MASCOTS } from './data/constants'
 import { buildDemoSchedule } from './data/demoSchedule'
-import { buildCoverageIssues, type CoverageIssue } from './lib/coverage'
+import { buildCoverageIssues, sameCoverageRule, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
-import type { RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
+import type { CoverageException, RotaPublication, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
 import ProfessionalHome from './components/ProfessionalHome'
 import { NotificationsPanel, CoverageIssuesPanel } from './components/AttentionPanels'
+import { ExceptionDialog } from './components/CoverageExceptions'
 import type { PublicationPreview } from './components/PublicationPanel'
 import ShiftEditor, { type AssignmentDraft, type ShiftSelection } from './components/ShiftEditor'
 import CalendarPanel from './components/CalendarPanel'
@@ -145,6 +146,8 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
   const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null)
+  const [coverageExceptions,setCoverageExceptions]=useState<CoverageException[]>([])
+  const [exceptionIssue,setExceptionIssue]=useState<CoverageIssue|null>(null)
   const [coverageProfiles, setCoverageProfiles] = useState<CoverageProfile[]>([])
   const [history, setHistory] = useState<AssignmentHistory[]>([])
   const [shiftSelection, setShiftSelection] = useState<ShiftSelection | null>(null)
@@ -161,7 +164,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if (!supabase || demo || !session) return
     const s = await supabase.from('et_staff').select('*').order('display_name')
     const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
-    const [c, a, r, t, b, h, cp, pub, published] = await Promise.all([
+    const [c, a, r, t, b, h, cp, pub, published, exceptions] = await Promise.all([
       supabase.from('et_consultations').select('*').eq('active', true).order('sort_order'),
       supabase.from(supervisor ? 'et_assignments' : 'et_published_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
       supabase.from('et_requests').select('*').order('created_at', { ascending: false }),
@@ -171,10 +174,12 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       supabase.from('et_staff_coverage').select('*'),
       supabase.from('et_rota_publications').select('*'),
       supabase.from('et_published_assignments').select('*').gte('work_date', '2026-10-01').lte('work_date', '2026-12-31'),
+      supervisor ? supabase.from('et_coverage_exceptions').select('*').order('created_at',{ascending:false}) : Promise.resolve({data:[],error:null}),
     ])
-    const failed = [s,c,a,r,t,b,h,cp,pub,published].find(result => result.error)
+    const failed = [s,c,a,r,t,b,h,cp,pub,published,exceptions].find(result => result.error)
     if (failed?.error) { setLoadError('No se han podido actualizar todos los datos. Pulsa Reintentar.'); return }
     setLoadError('')
+    setCoverageExceptions((exceptions.data??[]) as CoverageException[])
     setPublications((pub.data??[]) as RotaPublication[])
     setPublishedAssignments((published.data??[]) as Assignment[])
     if (cp.data) setCoverageProfiles(cp.data as CoverageProfile[])
@@ -197,6 +202,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, loadData)
@@ -241,7 +247,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const unreadBroadcasts = broadcastNotificationIds.length
   const unreadRequests = requestNotificationIds.length
   const unreadTotal = unreadBroadcasts + unreadRequests
-  const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests) : []
+  const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions) : []
   const nav = [
     ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['profile', CircleUserRound, 'Mi ficha'],
@@ -273,6 +279,23 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(data?.broadcast_id){try {const {data:push,error:pushError}=await supabase!.functions.invoke('et-send-push',{body:{broadcastId:data.broadcast_id}});if(pushError||push?.error||push?.failed)return 'Cuadrante publicado y aviso guardado. Algunas notificaciones push no se han podido entregar.'} catch {return 'Cuadrante publicado y aviso guardado. No se ha podido confirmar la entrega de las notificaciones push.'}}
     return null
   }
+  const saveCoverageException=async(issue:CoverageIssue,reason:string):Promise<string|null>=>{
+    const current=buildCoverageIssues(assignments,consultations,requests).find(i=>i.id===issue.id)
+    if(!issue.exceptionRule||!current?.exceptionRule||!sameCoverageRule(current.exceptionRule,issue.exceptionRule))return 'La cobertura ha cambiado. Cierra esta revisión y actualiza los datos.'
+    const content={work_date:issue.date,consultation_id:issue.consultationId,rule_id:issue.ruleId,rule_snapshot:issue.exceptionRule,reason}
+    if(demo){setCoverageExceptions(rows=>[{...content,id:crypto.randomUUID(),created_by:activeProfile.user_id??'demo',created_by_name:activeProfile.display_name,created_at:new Date().toISOString(),revoked_at:null},...rows]);return null}
+    const {data,error}=await supabase!.from('et_coverage_exceptions').insert(content).select('*').single()
+    if(error)return error.code==='23505'?'Ya hay una excepción para esta franja. Revísala en Cobertura → Excepciones de Planta.':error.message
+    if(!data)return 'No se ha podido confirmar la excepción.'
+    setCoverageExceptions(rows=>[data as CoverageException,...rows.filter(e=>e.id!==data.id)]);await loadData();return null
+  }
+  const revokeCoverageException=async(id:string):Promise<string|null>=>{
+    if(demo){setCoverageExceptions(rows=>rows.map(e=>e.id===id?{...e,revoked_at:new Date().toISOString()}:e));return null}
+    const {data,error}=await supabase!.from('et_coverage_exceptions').update({revoked_at:new Date().toISOString()}).eq('id',id).is('revoked_at',null).select('*')
+    if(error)return error.message
+    if(!data?.length){await loadData();return 'La excepción ya ha cambiado. Se han actualizado los datos.'}
+    setCoverageExceptions(rows=>rows.map(e=>e.id===id?data[0] as CoverageException:e));await loadData();return null
+  }
   const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
   const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
   const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
@@ -291,14 +314,15 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
       {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
       {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??'2026-10-01')}>Revisar publicación</button></div>}
-      {view === 'home' && isSupervisor && <SupervisorHome staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
+      {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
       {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
-      {view === 'calendar' && <CalendarPanel demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'calendar' && <CalendarPanel onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
-      {view === 'incidents' && isSupervisor && <CoverageIssuesPanel issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
+      {view === 'incidents' && isSupervisor && <CoverageIssuesPanel onException={setExceptionIssue} exceptions={coverageExceptions} onRevoke={revokeCoverageException} issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
       {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
+      {exceptionIssue && <ExceptionDialog issue={exceptionIssue} onClose={()=>setExceptionIssue(null)} onSave={reason=>saveCoverageException(exceptionIssue,reason)}/> }
       {shiftSelection && <ShiftEditor selection={shiftSelection} staff={staff} assignments={assignments} requests={requests} consultations={consultations} editable={isSupervisor} coverageProfiles={coverageProfiles} onClose={()=>setShiftSelection(null)} onSave={saveAssignment} onRemove={removeAssignment} />}
       {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={loadData} />}
       {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={loadData} />}
