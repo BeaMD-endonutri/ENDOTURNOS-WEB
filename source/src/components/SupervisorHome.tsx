@@ -16,7 +16,7 @@ export default function SupervisorHome({staff,consultations,assignments,requests
  const professionals=staff.filter(s=>s.active&&s.role==='professional')
  const dayAssignments=assignments.filter(a=>a.work_date===date)
  const conflicts=assignments.filter(a=>a.work_date>=today&&assignmentConflicts(a,assignments,requests,consultations).length>0)
- const issueAction=(i:CoverageIssue)=>onAssign({date:i.date,consultationId:i.consultationId,startTime:i.startTime,endTime:i.endTime})
+ const issueAction=(i:CoverageIssue)=>onAssign({date:i.date,consultationId:i.consultationId,startTime:i.startTime,endTime:i.endTime,findCoverage:i.kind==='shortage'})
  const queue = [
   ...activeIssues.map(i=>({id:`coverage-${i.id}`,date:i.date,level:i.severity==='critical'?0:1,title:i.title,detail:i.detail,action:i.kind==='suspended'?'Revisar turno':'Buscar cobertura',run:()=>issueAction(i)})),
   ...conflicts.filter(a=>scope==='all'||a.work_date.startsWith(scope)).map(a=>({id:`conflict-${a.id}`,date:a.work_date,level:1,title:`Conflicto · ${staff.find(p=>p.id===a.professional_id)?.display_name??'Profesional'}`,detail:assignmentConflicts(a,assignments,requests,consultations).join(' '),action:'Revisar turno',run:()=>onAssign({date:a.work_date,personId:a.professional_id})})),
