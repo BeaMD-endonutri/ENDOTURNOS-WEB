@@ -1008,3 +1008,5 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 .sheet-actions{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
 .sheet-actions .soft-button{font-size:.79rem;padding:7px 9px;min-height:38px;display:inline-flex;align-items:center;gap:5px}
 @media(max-width:620px){.folder-view-tabs{width:100%;box-sizing:border-box}.folder-view-tabs button{flex:1;padding-inline:7px}.folder-toolbar>.soft-button{width:100%;justify-content:center}}
+
+/* Folder receipts and replies publication. */
