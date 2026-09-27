@@ -553,3 +553,38 @@ button:disabled {cursor:not-allowed;opacity:.55;}
   .settings-grid { grid-template-columns: 1fr; gap: 14px; }
   .settings-holidays li { grid-template-columns: 100px 1fr; gap: 8px; }
 }
+
+.professional-home { max-width: 1120px; margin-inline: auto; }
+.personal-greeting { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+.personal-greeting img { width: 78px; height: 78px; object-fit: contain; }
+.personal-greeting h1 { margin: 5px 0; }
+.personal-greeting p { margin: 0; color: #526b5c; }
+.personal-today { margin-bottom: 20px; border-top: 4px solid #3a7d63; }
+.personal-today .section-heading { margin-bottom: 14px; }
+.personal-home-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; align-items: start; }
+.personal-pending { display: grid; gap: 20px; }
+.personal-pending h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.personal-shifts { display: grid; gap: 8px; }
+.personal-shift { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 14px; border: 1px solid #dce6d8; border-radius: 13px; background: #f6f9f3; color: var(--deep); text-align: left; cursor: pointer; }
+.personal-shift > span:nth-child(2) { flex: 1; min-width: 0; }
+.personal-shift strong, .personal-request-list strong { display: block; overflow-wrap: anywhere; }
+.personal-shift small { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 6px; color: #526b5c; }
+.personal-shift-dot { width: 10px; height: 32px; border-radius: 6px; flex-shrink: 0; }
+.personal-next-day { margin: 20px 0; }
+.personal-next-day h3 { font-size: 14px; margin-bottom: 10px; text-transform: capitalize; }
+.personal-empty { color: #526b5c; line-height: 1.6; }
+.personal-count { border-radius: 20px; background: #e9f1e6; padding: 3px 9px; font: 600 14px Inter, sans-serif; }
+.personal-notice-list { list-style: none; padding: 0; }
+.personal-notice-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.personal-notice-list small, .personal-request-list small { display: block; margin-top: 5px; color: #526b5c; }
+.personal-request-list button, .personal-absence, .personal-response { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 12px; margin: 10px 0; min-height: 44px; border: 1px solid #dce6d8; border-radius: 12px; background: #f6f9f3; color: #224e38; cursor: pointer; }
+.personal-response { background: #fff4d9; border-color: #e4d7a4; }
+.professional-home .text-button { min-height: 44px; }
+@media(max-width:760px) {
+ .personal-home-grid { grid-template-columns: 1fr; }
+ .personal-greeting { gap: 12px; }
+ .personal-greeting img { width: 58px; height: 58px; }
+ .personal-today .section-heading { align-items: stretch; }
+ .personal-today .primary { min-height: 44px; }
+ .professional-home .panel { padding: 17px; }
+}

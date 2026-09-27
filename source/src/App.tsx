@@ -12,6 +12,7 @@ import type { RotaPublication, CoverageProfile, AssignmentHistory, Assignment, C
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
+import ProfessionalHome from './components/ProfessionalHome'
 import type { PublicationPreview } from './components/PublicationPanel'
 import ShiftEditor, { type AssignmentDraft, type ShiftSelection } from './components/ShiftEditor'
 import CalendarPanel from './components/CalendarPanel'
@@ -131,6 +132,8 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
 }
 
 function Workspace({ session, demo, onExitDemo }: { session: Session | null; demo: boolean; onExitDemo: () => void }) {
+  const [currentDay,setCurrentDay]=useState(()=>format(new Date(),'yyyy-MM-dd'))
+  useEffect(()=>{const refresh=()=>setCurrentDay(format(new Date(),'yyyy-MM-dd'));const timer=window.setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',refresh)}},[])
   const [staff, setStaff] = useState<Staff[]>(demo ? DEMO_STAFF : [])
   const [consultations, setConsultations] = useState<Consultation[]>(demo ? CONSULTATIONS : [])
   const [assignments, setAssignments] = useState<Assignment[]>(demo ? buildDemoSchedule : [])
@@ -240,7 +243,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests) : []
   const topNotificationTotal = unreadTotal + coverageIssues.length
   const nav = [
-    ...(isSupervisor ? [['home', Home, 'Inicio']] : []),
+    ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['profile', CircleUserRound, 'Mi ficha'],
     ...(isSupervisor ? [['team', Users, 'Equipo'], ['consultations', Stethoscope, 'Consultas'], ['settings', Settings, 'Configuración'], ['history', History, 'Historial']] : []),
   ] as Array<[View, typeof CalendarDays, string]>
@@ -277,19 +280,20 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   return <div className="app-shell">
     <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-icon"><Clock3 /></span><div><strong>EndoTurnos</strong><small>Endonutrición</small></div></div>
-      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={(view === 'home' && !isSupervisor ? 'calendar' : view) === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false); window.scrollTo({top:0,behavior:'smooth'}) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
+      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={view === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false); window.scrollTo({top:0,behavior:'smooth'}) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="mini-profile"><img src={mascot.src} alt="" /><div><strong>{activeProfile.display_name}</strong><small>{isSupervisor ? 'Supervisora' : 'Profesional'}</small></div></div><button className="icon-button" title="Cerrar sesión" onClick={() => demo ? onExitDemo() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
-    <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'||(view==='home'&&!isSupervisor)?'calendar-screen':''}`}>
+    <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'?'calendar-screen':''}`}>
       {loadError && <div role="alert" className="form-message">{loadError}<button className="soft-button" onClick={loadData}>Reintentar</button></div>}
       <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="icon-button notification-button" title="Notificaciones" onClick={() => { if (isSupervisor) { setView('home') } else setView(unreadRequests > 0 && unreadBroadcasts === 0 ? 'requests' : 'broadcasts') }}><Bell size={19} />{topNotificationTotal > 0 && <b>{topNotificationTotal}</b>}</button><button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
-      <Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />
+      {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
       {isSupervisor && view !== 'home' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('home')} />}
-      {unreadTotal > 0 && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 solicitud nueva' : `${unreadRequests} solicitudes nuevas`}</span><strong>Ver solicitudes</strong></button>}</div>}
+      {unreadTotal > 0 && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 solicitud nueva' : `${unreadRequests} solicitudes nuevas`}</span><strong>Ver solicitudes</strong></button>}</div>}
       {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??'2026-10-01')}>Revisar publicación</button></div>}
       {view === 'home' && isSupervisor && <SupervisorHome staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
-      {(view === 'calendar' || (view === 'home' && !isSupervisor)) && <CalendarPanel demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
+      {view === 'calendar' && <CalendarPanel demo={demo} publications={publications} publishedAssignments={publishedAssignments} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
@@ -301,7 +305,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
       {view === 'profile' && <ProfileView coverageProfile={coverageProfiles.find(p=>p.staff_id===activeProfile.id)} onCoverageChange={setCoverageProfiles} consultations={consultations} profile={activeProfile} demo={demo} onUpdated={(key) => { setProfile(p => p ? { ...p, mascot_key: key } : p); setStaff(p => p.map(s => s.id === activeProfile.id ? { ...s, mascot_key: key } : s)) }} reload={loadData} />}
     </main>
     <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
-      const active=(view==='home'&&!isSupervisor?'calendar':view)===key
+      const active=view===key
       const count=key==='broadcasts'?unreadBroadcasts:key==='requests'?unreadRequests:0
       return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{setView(key);setMobileNav(false);if(key==='requests')setRequestFocus(null);window.scrollTo({top:0,behavior:'smooth'})}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
     })}</nav>
