@@ -743,3 +743,75 @@ button:disabled {cursor:not-allowed;opacity:.55;}
   .scheduled-card { grid-template-columns:auto minmax(0,1fr); }
   .scheduled-card > .icon-action { grid-column:1/-1; width:100%; }
 }
+
+/* Final interface polish: consistent controls, readable states and compact screens. */
+:root { --muted-text:#53695b; --focus-ring:#286b4e; }
+.section-heading p, .helper, .calendar-note { line-height:1.55; }
+.section-heading p, .helper { color:var(--muted-text); }
+.section-heading > div, .panel, .form-grid > label { min-width:0; }
+.section-heading h1 { text-wrap:balance; }
+.panel h2 { line-height:1.25; }
+.panel h3, .person-card h3, .consultation-cards strong, .scheduled-card h3 { overflow-wrap:anywhere; }
+.primary, .soft-button, .text-button.inline, .icon-action, .segmented button { min-height:44px; line-height:1.3; }
+.primary, .soft-button, .attention-button { transition:background-color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.primary svg, .soft-button svg, .attention-button svg, .icon-action svg { flex-shrink:0; }
+button:disabled { cursor:not-allowed; opacity:.55; }
+button:disabled:hover { transform:none; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible { outline:3px solid var(--focus-ring); outline-offset:3px; }
+input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select { min-height:44px; }
+input::placeholder, textarea::placeholder { color:#6a7c70; opacity:1; }
+input[type="checkbox"], input[type="radio"] { accent-color:var(--green); }
+.status, .new-request-label, .queue-level { line-height:1.5; }
+.form-message { line-height:1.55; overflow-wrap:anywhere; border:1px solid #dce5d6; }
+.form-message[role="alert"] { background:#fff1eb; border-color:#e8c8bb; color:#783f30; }
+.inline-actions, .card-actions, .request-actions, .attention-actions { flex-wrap:wrap; }
+.consultation-cards article { align-items:flex-start; }
+.consultation-cards article > .soft-button { align-self:center; }
+.modal { max-width:100%; scrollbar-gutter:stable; }
+.modal > h2, .modal > form > h2 { padding-right:46px; }
+.modal-close { width:44px; height:44px; top:12px; right:12px; }
+.modal-footer { gap:10px; }
+.exception-register small, .personal-notice-list small, .scheduled-card small { line-height:1.5; }
+.personal-count { font-family:inherit; }
+.task-postit h3, .task-postit p, .mini-postit strong, .mini-postit p { overflow-wrap:anywhere; }
+@media(hover:hover) {
+ .soft-button:not(:disabled):hover { background:#d7e8d8; box-shadow:inset 0 0 0 1px #b6cdb9; }
+ .attention-button:not(:disabled):hover { box-shadow:0 2px 8px #193c2914; }
+ .personal-shift:hover { border-color:#91b49a; background:#edf5e9; }
+}
+@media(max-width:980px) {
+ .sidebar { height:100dvh; }
+ .topbar .menu-button, .topbar .avatar-button { width:44px; height:44px; flex-shrink:0; }
+ .topbar { min-height:72px; }
+ .legend { max-height:120px; overflow-y:auto; padding-block:6px; }
+}
+@media(max-width:640px) {
+ input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size:16px; }
+ .section-heading { gap:14px; }
+ .section-heading h1 { font-size:clamp(27px,7vw,31px); line-height:1.15; }
+ .section-heading p { font-size:13px; }
+ .modal-backdrop { padding:10px; }
+ .modal, .wide-modal { width:100%; max-height:calc(100dvh - 20px); border-radius:18px; padding:24px 17px; }
+ .modal-footer > .primary, .modal-footer > .soft-button { flex:1 1 130px; }
+ .priority-item > button { flex:1 1 135px; max-width:none; margin-left:0; }
+ .priority-item > div:not(.attention-actions) { flex-basis:calc(100% - 36px); }
+ .attention-actions { gap:8px; }
+ .attention-actions > button { flex:1 1 135px; max-width:none; }
+ .consultation-cards article { flex-wrap:wrap; gap:10px; }
+ .consultation-cards article > div { flex-basis:calc(100% - 32px); }
+ .consultation-cards article > .soft-button { margin-left:auto; }
+ .settings-holidays li > span { overflow-wrap:anywhere; }
+ .planning-settings .settings-holidays li { grid-template-columns:90px minmax(0,1fr) auto; }
+ .personal-notice-list li, .personal-request-list button { padding-block:12px; }
+}
+@media(max-width:370px) {
+ .topbar { padding-inline:10px; }
+ .topbar .menu-button { margin-right:4px; }
+ .topbar .top-actions { gap:4px; }
+ .attention-button { max-width:96px; padding-inline:5px; }
+ .home-metrics { gap:6px; }
+ .home-metrics > button { padding:12px 9px; }
+}
+@media(prefers-reduced-motion:reduce) {
+ *, *::before, *::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; scroll-behavior:auto!important; }
+}
