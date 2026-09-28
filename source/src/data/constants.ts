@@ -28,7 +28,7 @@ export const DEMO_STAFF: Staff[] = [
 }))
 
 export const CONSULTATIONS: Consultation[] = [
-  ['VAC', 'Vacaciones', 'VAC', '#b88624'], ['PERM', 'Permisos', 'PERM', '#a05b87'], ['FOR', 'Formaciones', 'FOR', '#416eb0'],
+  ['VAC', 'Vacaciones', 'VAC', '#277a59'], ['PERM', 'Permisos', 'PER', '#8b67a1'], ['FOR', 'Formaciones', 'FOR', '#d97d2d'], ['DESCANSO', 'Descanso', '', '#7b8185'],
   ['PLANTA', 'Planta', 'PL', '#3a7d63'], ['HDD', 'Hospital de día', 'HDD', '#297b8d'],
   ['EDA', 'EDA', 'EDA', '#c56d54'], ['EDA_GRUPAL', 'EDA grupal', 'EDAG', '#d08469'],
   ['NUTRICION', 'Nutrición', 'NUT', '#719748'], ['PF', 'PF', 'PF', '#8b6bb0'],
