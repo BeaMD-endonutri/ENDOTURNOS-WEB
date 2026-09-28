@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, CheckCheck, CornerUpLeft, ImagePlus, Paperclip, Send, SlidersHorizontal, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Staff } from '../types'
@@ -26,7 +26,7 @@ type FolderAttachment = {
 
 const COLORS = ['#8FA77B', '#D4A63C', '#C9827A', '#6F9DC6', '#8E7BB7', '#B89068']
 
-export default memo(function FoldersView({
+export default function FoldersView({
   profile,
   staff,
   demo,
@@ -96,26 +96,14 @@ export default memo(function FoldersView({
       .in('message_id', nextMessages.map(row => row.id))
     if (attachmentError) { setAttachments([]); return }
 
-    const rawAttachments = (attachmentRows ?? []) as FolderAttachment[]
-    if (!rawAttachments.length) { setAttachments([]); return }
-    const { data: signedRows } = await supabase.storage.from('et-folder-images').createSignedUrls(rawAttachments.map(attachment => attachment.storage_path), 3600)
-    const signedByPath = new Map((signedRows ?? []).map(row => [row.path, row.signedUrl]))
-    setAttachments(rawAttachments.map(attachment => ({ ...attachment, signed_url: signedByPath.get(attachment.storage_path) })))
+    const withUrls = await Promise.all(((attachmentRows ?? []) as FolderAttachment[]).map(async attachment => {
+      const { data } = await supabase!.storage.from('et-folder-images').createSignedUrl(attachment.storage_path, 3600)
+      return { ...attachment, signed_url: data?.signedUrl }
+    }))
+    setAttachments(withUrls)
   }
 
   useEffect(() => { void loadFolder() }, [profile.id, demo])
-
-  const staffById = useMemo(() => new Map(staff.map(person => [person.id, person])), [staff])
-  const messagesById = useMemo(() => new Map(messages.map(message => [message.id, message])), [messages])
-  const attachmentsByMessage = useMemo(() => {
-    const map = new Map<string, FolderAttachment[]>()
-    for (const attachment of attachments) {
-      const rows = map.get(attachment.message_id)
-      if (rows) rows.push(attachment)
-      else map.set(attachment.message_id, [attachment])
-    }
-    return map
-  }, [attachments])
 
   const visibleMessages = useMemo(() => {
     const rows = messages.filter(message => view === 'sent'
@@ -274,10 +262,10 @@ export default memo(function FoldersView({
           <strong>{view === 'sent' ? 'Aún no has enviado notas' : view === 'history' ? 'Aún no hay notas confirmadas' : 'No tienes notas pendientes'}</strong>
           <span>{view === 'sent' ? 'Las notas que derives quedarán aquí con su estado.' : view === 'history' ? 'Las notas leídas aparecerán aquí.' : 'Las notas nuevas aparecerán aquí.'}</span>
         </div> : visibleMessages.map((message, index) => {
-          const sender = staffById.get(message.sender_id)
-          const recipient = staffById.get(message.recipient_id)
-          const parent = message.parent_id ? messagesById.get(message.parent_id) : undefined
-          const messageAttachments = attachmentsByMessage.get(message.id) ?? []
+          const sender = staff.find(person => person.id === message.sender_id)
+          const recipient = staff.find(person => person.id === message.recipient_id)
+          const parent = messages.find(row => row.id === message.parent_id)
+          const messageAttachments = attachments.filter(item => item.message_id === message.id)
           return <article className="folder-sheet" key={message.id} style={{ '--sheet-index': index } as React.CSSProperties}>
             <div className="sheet-date">{new Date(message.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
             <h2>{message.title}</h2>
@@ -328,4 +316,4 @@ export default memo(function FoldersView({
       </form>
     </div>}
   </section>
-})
+}
