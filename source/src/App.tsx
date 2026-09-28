@@ -300,10 +300,9 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const saveAssignment = async (next: AssignmentDraft|AssignmentDraft[]): Promise<string | null> => {
     const rows=Array.isArray(next)?next:[next]
     if (demo) {
-      const created:Assignment[]=[]
       setAssignments(prev=>{
         let out=[...prev]
-        for(const item of rows){const before=out.find(a=>a.id===item.id)??null;const row={...item,id:item.id??crypto.randomUUID(),updated_at:new Date().toISOString()} as Assignment;out=before?out.map(a=>a.id===row.id?row:a):[...out,row];created.push(row);addHistory(before,row)}
+        for(const item of rows){const before=out.find(a=>a.id===item.id)??null;const row={...item,id:item.id??crypto.randomUUID(),updated_at:new Date().toISOString()} as Assignment;out=before?out.map(a=>a.id===row.id?row:a):[...out,row];addHistory(before,row)}
         return out
       })
       return null
