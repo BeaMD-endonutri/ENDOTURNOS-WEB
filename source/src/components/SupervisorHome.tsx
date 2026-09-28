@@ -5,7 +5,7 @@ import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { Assignment, Consultation, ShiftRequest, Staff } from '../types'
 import type { CoverageIssue } from '../lib/coverage'
-import { assignmentConflicts, hasAbsence } from '../lib/scheduling'
+import { hasAbsence, overlaps } from '../lib/scheduling'
 import type { ShiftSelection } from './ShiftEditor'
 export default memo(function SupervisorHome({onException,staff,consultations,assignments,requests,issues,profile,onAssign,onCalendar,onRequest,onBroadcast,onTeam}:{onException?:(issue:CoverageIssue)=>void;staff:Staff[];consultations:Consultation[];assignments:Assignment[];requests:ShiftRequest[];issues:CoverageIssue[];profile:Staff;onAssign:(s:ShiftSelection)=>void;onCalendar:(date:string)=>void;onRequest:(id?:string)=>void;onBroadcast:()=>void;onTeam:()=>void}) {
  const planning=usePlanning(); const {start_date:ROTA_START,end_date:ROTA_END,holidays:HOLIDAYS}=planning
@@ -17,7 +17,36 @@ export default memo(function SupervisorHome({onException,staff,consultations,ass
  const activeIssues=useMemo(()=>issues.filter(i=>i.date>=today&&(scope==='all'||i.date.startsWith(scope))),[issues,scope,today])
  const professionals=useMemo(()=>staff.filter(s=>s.active&&s.role==='professional'),[staff])
  const dayAssignments=useMemo(()=>assignments.filter(a=>a.work_date===date),[assignments,date])
- const conflicts=useMemo(()=>assignments.filter(a=>a.work_date>=today&&assignmentConflicts(a,assignments,requests,consultations).length>0),[assignments,consultations,requests,today])
+ const conflictDetails=useMemo(()=>{
+  const details=new Map<string,string[]>()
+  const groups=new Map<string,Assignment[]>()
+  for(const a of assignments){
+   if(a.work_date<today)continue
+   const key=`${a.professional_id}|${a.work_date}`
+   const rows=groups.get(key)
+   if(rows)rows.push(a);else groups.set(key,[a])
+  }
+  const consultationLabel=new Map(consultations.map(c=>[c.id,c.label]))
+  for(const rows of groups.values()){
+   for(let i=0;i<rows.length;i++)for(let j=i+1;j<rows.length;j++){
+    const a=rows[i],b=rows[j]
+    if(!overlaps(a.start_time,a.end_time,b.start_time,b.end_time))continue
+    const aText=`Coincide con ${consultationLabel.get(b.consultation_id)??b.consultation_id} (${b.start_time.slice(0,5)}–${b.end_time.slice(0,5)}).`
+    const bText=`Coincide con ${consultationLabel.get(a.consultation_id)??a.consultation_id} (${a.start_time.slice(0,5)}–${a.end_time.slice(0,5)}).`
+    details.set(a.id,[...(details.get(a.id)??[]),aText])
+    details.set(b.id,[...(details.get(b.id)??[]),bText])
+   }
+  }
+  const absences=requests.filter(r=>r.status==='approved'&&['vacation','permission'].includes(r.request_type))
+  for(const a of assignments){
+   if(a.work_date<today)continue
+   if(absences.some(r=>r.professional_id===a.professional_id&&r.date_from<=a.work_date&&r.date_to>=a.work_date)){
+    details.set(a.id,[...(details.get(a.id)??[]),'Tiene vacaciones o un permiso aprobado para ese día. Revisa su disponibilidad.'])
+   }
+  }
+  return details
+ },[assignments,consultations,requests,today])
+ const conflicts=useMemo(()=>assignments.filter(a=>conflictDetails.has(a.id)),[assignments,conflictDetails])
  const staffById=useMemo(()=>new Map(staff.map(s=>[s.id,s])),[staff])
  const staffByUserId=useMemo(()=>new Map(staff.filter(s=>s.user_id).map(s=>[s.user_id!,s])),[staff])
  const consultationById=useMemo(()=>new Map(consultations.map(c=>[c.id,c])),[consultations])
@@ -25,7 +54,7 @@ export default memo(function SupervisorHome({onException,staff,consultations,ass
  const issueAction=(i:CoverageIssue)=>onAssign({date:i.date,consultationId:i.consultationId,startTime:i.startTime,endTime:i.endTime,findCoverage:i.kind==='shortage'})
  const queue = [
   ...activeIssues.map(i=>({id:`coverage-${i.id}`,date:i.date,level:i.severity==='critical'?0:1,title:i.title,detail:i.detail,action:i.kind==='suspended'?'Revisar turno':'Buscar cobertura',exceptionIssue:i.exceptionRule?i:undefined,run:()=>issueAction(i)})),
-  ...conflicts.filter(a=>scope==='all'||a.work_date.startsWith(scope)).map(a=>({id:`conflict-${a.id}`,date:a.work_date,level:1,title:`Conflicto · ${staffById.get(a.professional_id)?.display_name??'Profesional'}`,detail:assignmentConflicts(a,assignments,requests,consultations).join(' '),action:'Revisar turno',exceptionIssue:undefined,run:()=>onAssign({date:a.work_date,personId:a.professional_id})})),
+  ...conflicts.filter(a=>scope==='all'||a.work_date.startsWith(scope)).map(a=>({id:`conflict-${a.id}`,date:a.work_date,level:1,title:`Conflicto · ${staffById.get(a.professional_id)?.display_name??'Profesional'}`,detail:(conflictDetails.get(a.id)??[]).join(' '),action:'Revisar turno',exceptionIssue:undefined,run:()=>onAssign({date:a.work_date,personId:a.professional_id})})),
   ...pending.filter(r=>scope==='all'||r.date_from.startsWith(scope)).map(r=>({id:`request-${r.id}`,date:r.date_from,level:1,title:`Solicitud · ${(r.created_by?staffByUserId.get(r.created_by)?.display_name:undefined)??staffById.get(r.professional_id)?.display_name??'Profesional'}`,detail:r.details,action:'Revisar solicitud',exceptionIssue:undefined,run:()=>onRequest(r.id)})),
  ].sort((a,b)=>a.level-b.level||a.date.localeCompare(b.date)||a.title.localeCompare(b.title))
  return <section className="content-section supervisor-home"><div className="section-heading"><div><span className="eyebrow">Tu centro de trabajo</span><h1>Mi equipo hoy</h1><p>Lo importante primero. Resuelve cada pendiente desde aquí.</p></div><button className="primary" onClick={()=>onCalendar(clampDate(date))}><CalendarDays size={18}/> Ver mes completo</button></div>
