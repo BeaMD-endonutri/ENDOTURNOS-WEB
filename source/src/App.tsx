@@ -387,13 +387,13 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const activeProfile = profile!
   const isSupervisor = activeProfile.role === 'supervisor'
   const mascot = MASCOTS.find(m => m.key === activeProfile.mascot_key) ?? MASCOTS[0]
-  const todayAssignments = useMemo(() => assignments.filter(a => a.professional_id === activeProfile.id && a.work_date === todayIso), [assignments, activeProfile.id])
+  const todayAssignments = assignments.filter(a => a.professional_id === activeProfile.id && a.work_date === todayIso)
   const unreadBroadcasts = broadcastNotificationIds.length
   const unreadRequests = requestNotificationIds.length
   const unreadTotal = unreadBroadcasts + unreadRequests
-  const coverageIssues = useMemo(() => isSupervisor ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions) : [], [isSupervisor, assignments, consultations, requests, coverageExceptions])
-  const professionalStaff = useMemo(() => staff.filter(s => s.active && s.role === 'professional'), [staff])
-  const visibleConsultations = useMemo(() => consultations.filter(c => !isAbsence(c.id)), [consultations])
+  const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions) : []
+  const professionalStaff = staff.filter(s => s.active && s.role === 'professional')
+  const visibleConsultations = consultations.filter(c => !isAbsence(c.id))
   const nav = [
     ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['folders', FolderOpen, 'Mi carpeta'], ['profile', CircleUserRound, 'Mi ficha'],
