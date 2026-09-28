@@ -1,3 +1,4 @@
+import PasswordRecovery, { RECOVERY_KEY, recoveryPending, clearRecovery } from './components/PasswordRecovery'
 import { isAbsence } from './lib/absences'
 import { getPlanning, usePlanning, setPlanning, DEFAULT_PLANNING, type PlanningConfig } from './lib/planningConfig'
 import PlanningSettings from './components/PlanningSettings'
@@ -66,16 +67,23 @@ async function playBell() {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [demo, setDemo] = useState(false)
+  const [recovering,setRecovering]=useState(recoveryPending)
+  const [recoveryError,setRecoveryError]=useState(()=>new URLSearchParams(window.location.hash.slice(1)).has('error_code'))
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false) })
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next))
+    const { data } = supabase.auth.onAuthStateChange((event, next) => {
+      setSession(next)
+      if(event==='PASSWORD_RECOVERY'&&next){sessionStorage.setItem(RECOVERY_KEY,next.user.id);setRecoveryError(false);setRecovering(true)}
+      if(event==='SIGNED_OUT'){sessionStorage.removeItem(RECOVERY_KEY)}
+    })
+    supabase.auth.getSession().then(({data,error})=>{setSession(data.session);if(error)setRecoveryError(true);setLoading(false)}).catch(()=>{setRecoveryError(true);setLoading(false)})
     return () => data.subscription.unsubscribe()
   }, [])
 
   if (loading) return <Splash />
+  if (recovering) return <PasswordRecovery valid={Boolean(session)&&!recoveryError} onClose={()=>{clearRecovery();setRecovering(false);setRecoveryError(false)}}/>
   if (!session && !demo) return <AuthScreen onDemo={() => setDemo(true)} />
   return <Workspace session={session} demo={demo} onExitDemo={() => setDemo(false)} />
 }
@@ -85,7 +93,7 @@ function Splash() {
 }
 
 function AuthScreen({ onDemo }: { onDemo: () => void }) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -97,21 +105,22 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setMessage(''); setBusy(true)
     if (!supabase) { setMessage('La conexión segura todavía no está configurada. Puedes abrir la demostración.'); setBusy(false); return }
-    if (mode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setMessage('No hemos podido iniciar sesión. Revisa el usuario y la contraseña.')
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
-          data: { full_name: name, username, mascot_key: mascot },
-        },
-      })
-      setMessage(error ? error.message : 'Registro enviado. Revisa tu correo si se solicita confirmación.')
-    }
-    setBusy(false)
+    try {
+      if(mode==='reset'){
+        const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`})
+        setMessage(error ? error.status===429 ? 'Espera unos minutos antes de pedir otro enlace.' : 'No se ha podido enviar el enlace. Inténtalo de nuevo en unos minutos.' : 'Si ese correo tiene una cuenta, recibirás un enlace para cambiar tu contraseña. Revisa también la carpeta de spam.')
+      } else if (mode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({ email:email.trim(), password })
+        if (error) setMessage('No hemos podido iniciar sesión. Revisa el correo y la contraseña.')
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email:email.trim(), password,
+          options:{emailRedirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`,data:{full_name:name,username,mascot_key:mascot}},
+        })
+        setMessage(error ? error.message : 'Registro enviado. Revisa tu correo si se solicita confirmación.')
+      }
+    }catch{setMessage('No se ha podido conectar. Comprueba tu conexión e inténtalo de nuevo.')}
+    finally{setBusy(false)}
   }
 
   return <main className="auth-page">
@@ -122,16 +131,18 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
       <div className="mascot-cluster">{MASCOTS.map((m, i) => <img key={m.key} src={m.src} alt={m.name} style={{ '--i': i } as React.CSSProperties} />)}</div>
     </section>
     <section className="auth-card">
-      <div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Entrar</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Registrarme</button></div>
-      <div className="auth-heading"><h2>{mode === 'login' ? '¡Hola de nuevo!' : 'Crea tu espacio'}</h2><p>{mode === 'login' ? 'Accede con tu usuario y contraseña.' : 'Elige también quién te dará la bienvenida.'}</p></div>
+      <div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} disabled={busy} onClick={() => {setMode('login');setMessage('');setPassword('')}}>Entrar</button><button className={mode === 'signup' ? 'active' : ''} disabled={busy} onClick={() => {setMode('signup');setMessage('');setPassword('')}}>Registrarme</button></div>
+      <div className="auth-heading"><h2>{mode==='reset'?'Recuperar contraseña':mode === 'login' ? '¡Hola de nuevo!' : 'Crea tu espacio'}</h2><p>{mode==='reset'?'Introduce el correo con el que registraste tu propia cuenta. Te enviaremos un enlace para elegir una contraseña nueva.':mode === 'login' ? 'Accede con tu correo y contraseña.' : 'Elige también quién te dará la bienvenida.'}</p></div>
       <form onSubmit={submit}>
         {mode === 'signup' && <><label>Nombre completo<input required value={name} onChange={e => setName(e.target.value)} placeholder="Nombre Apellidos" /></label><label>Nombre de usuario<input required value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))} placeholder="usuario" /></label></>}
         <label>Usuario (correo)<input required type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="nombre@hospital.es" /></label>
-        <label>Contraseña<input required minLength={8} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" /></label>
+        {mode!=='reset'&&<label>Contraseña<input required minLength={8} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" /></label>}
         {mode === 'signup' && <MascotPicker value={mascot} onChange={setMascot} compact />}
-        {message && <p className="form-message">{message}</p>}
-        <button className="primary wide" disabled={busy}>{busy ? <RefreshCw className="spin" size={18} /> : mode === 'login' ? 'Entrar en EndoTurnos' : 'Crear mi cuenta'}</button>
+        {message && <p className="form-message" role="status">{message}</p>}
+        <button className="primary wide" disabled={busy}>{busy ? <RefreshCw className="spin" size={18} /> : mode==='reset'?'Enviar enlace de recuperación':mode === 'login' ? 'Entrar en EndoTurnos' : 'Crear mi cuenta'}</button>
       </form>
+      {mode==='login'&&<button type="button" className="text-button" disabled={busy} onClick={()=>{setMode('reset');setMessage('');setPassword('')}}>¿Has olvidado tu contraseña?</button>}
+      {mode==='reset'&&<button type="button" className="text-button" disabled={busy} onClick={()=>{setMode('login');setMessage('')}}>Volver al acceso</button>}
       {!isSupabaseConfigured && <button className="text-button" onClick={onDemo}>Ver demostración interactiva</button>}
     </section>
   </main>
