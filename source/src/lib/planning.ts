@@ -1,3 +1,4 @@
+import { isAbsence } from './absences'
 import { addDays, differenceInCalendarDays, differenceInCalendarWeeks, format, getDay, parseISO } from 'date-fns'
 import type { Assignment, Consultation, CoverageProfile, ShiftRequest, Staff } from '../types'
 import { getPlanning } from './planningConfig'
@@ -6,6 +7,7 @@ export interface CopyPreviewRow { source: Assignment; target: Assignment; blocke
 export function copyRuleCheck(c:Consultation|undefined,date:string,start:string,end:string,consultations:Consultation[],config=getPlanning()) {
  const blocked:string[]=[];const review:string[]=[]
  if(date<config.start_date||date>config.end_date)blocked.push('Fuera del periodo disponible')
+ if(c?.active&&isAbsence(c.id))return {blocked,review}
  if(config.holidays[date])blocked.push(`Festivo: ${config.holidays[date]}`)
  if(!c?.active){blocked.push('Consulta no activa');return {blocked,review}}
  const rules=consultations.filter(x=>x.active).flatMap(x=>(x.coverage_rules??defaultCoverageRules(x.id)).filter(r=>x.id===c.id||r.alternatives?.includes(c.id)))
@@ -26,8 +28,10 @@ export function buildCopyPreview(assignments:Assignment[],consultations:Consulta
  if(!staff.some(p=>p.id===source.professional_id&&p.active&&p.role==='professional'))blocked.push('Profesional no activo')
  blocked.push(...assignmentConflicts(target,assignments,requests,consultations))
  const profile=profiles.find(p=>p.staff_id===source.professional_id)
+ if(!isAbsence(source.consultation_id)){
  if(!profile)review.push('Ficha de cobertura pendiente de configurar')
  else if(!profile.consultation_ids.includes(source.consultation_id))blocked.push('No puede cubrir esta consulta según su ficha')
+ }
  if(source.provisional)review.push('Turno provisional: confirma la cadencia')
  return {source,target,blocked,review}
  })

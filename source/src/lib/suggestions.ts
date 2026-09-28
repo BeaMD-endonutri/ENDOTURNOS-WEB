@@ -1,3 +1,4 @@
+import { isAbsence, workingIntervals } from './absences'
 import {addDays,differenceInCalendarWeeks,endOfMonth,format,getDay,parseISO,startOfWeek} from 'date-fns'
 import type {Assignment,Consultation,CoverageException,CoverageProfile,CoverageRule,ShiftRequest,Staff} from '../types'
 import type {PlanningConfig} from './planningConfig'
@@ -16,7 +17,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  const from=month+'-01',until=format(endOfMonth(parseISO(from)),'yyyy-MM-dd')
  const warnings:string[]=[];const proposed:SuggestedShift[]=[];const working=[...assignments]
  if(from<planning.start_date||until>planning.end_date)return {proposed,warnings:['Amplía el periodo en Configuración antes de sugerir este mes.'],issues:[]}
- const configured=consultations.filter(c=>{if(!c.active)return false;if(!c.preferred_staff_id){warnings.push(`${c.label}: falta el profesional preferente.`);return false}return true})
+ const configured=consultations.filter(c=>{if(!c.active||isAbsence(c.id))return false;if(!c.preferred_staff_id){warnings.push(`${c.label}: falta el profesional preferente.`);return false}return true})
  for(const p of staff.filter(p=>p.active&&p.role==='professional')){const profile=profiles.find(x=>x.staff_id===p.id);if(!profile?.consultation_ids.length||!profile.work_cadences?.length)warnings.push(`${p.display_name}: ficha de consultas o cadencias pendiente; no se propondrá.`)}
  type Slot={c:Consultation;r:CoverageRule;dates:string[];target:number}
  const slots:Slot[]=[]
@@ -34,7 +35,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   }
   if(!open)warnings.push(`${c.label}: sin franjas abiertas este mes; revisa la vigencia y las suspensiones.`)
  }
- const coverage=(s:Slot,date:string)=>minimumCoverage(working.filter(a=>[s.c.id,...(s.r.alternatives??[])].includes(a.consultation_id)&&a.work_date===date&&!hasAbsence(a.professional_id,date,requests)),s.r.start_time,s.r.end_time)
+ const coverage=(s:Slot,date:string)=>minimumCoverage(workingIntervals(working).filter(a=>[s.c.id,...(s.r.alternatives??[])].includes(a.consultation_id)&&a.work_date===date&&!hasAbsence(a.professional_id,date,requests)),s.r.start_time,s.r.end_time)
  const available=(s:Slot,date:string)=>staff.filter(p=>p.active&&p.role==='professional'&&[s.c.preferred_staff_id,...(s.c.secondary_staff_ids??[])].includes(p.id)).map(person=>({person,profile:profiles.find(p=>p.staff_id===person.id)})).filter(({person,profile})=>profile?.consultation_ids.includes(s.c.id)&&cadenceAllows(profile,date,s.r.start_time,s.r.end_time)&&!assignmentConflicts({professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false},working,requests,consultations).length&&weeklyLoad(person.id,date,working)+duration(s.r)<=person.weekly_minutes).sort((a,b)=>Number(b.person.id===s.c.preferred_staff_id)-Number(a.person.id===s.c.preferred_staff_id)||(a.profile!.consultation_ids.indexOf(s.c.id)-b.profile!.consultation_ids.indexOf(s.c.id))||(weeklyLoad(a.person.id,date,working)/a.person.weekly_minutes-weeklyLoad(b.person.id,date,working)/b.person.weekly_minutes)||a.person.display_name.localeCompare(b.person.display_name,'es'))
  // Allocate scarce recurring services first, one place per service before filling second places.
  const recurring=slots.filter(s=>!s.r.monthly)

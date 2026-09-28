@@ -1,3 +1,4 @@
+import { isAbsence, workingIntervals } from './absences'
 import { addDays, differenceInCalendarWeeks, endOfMonth, format, getDay, parseISO, startOfMonth } from 'date-fns'
 import { getPlanning } from './planningConfig'
 import type { Assignment, Consultation, CoverageRule, ShiftRequest, CoverageException } from '../types'
@@ -16,7 +17,7 @@ export function minimumCoverage(rows: Assignment[], start: string, end: string):
 }
 export function buildCoverageIssues(assignments: Assignment[], consultations: Consultation[], requests: ShiftRequest[] = [], from = getPlanning().start_date, until = getPlanning().end_date, exceptions: CoverageException[] = [], holidays = getPlanning().holidays): CoverageIssue[] {
   const issues: CoverageIssue[] = []
-  for (const c of consultations.filter(c => c.active)) {
+  for (const c of consultations.filter(c => c.active && !isAbsence(c.id))) {
     for (const rule of c.coverage_rules ?? defaultCoverageRules(c.id)) {
       const ids = [c.id, ...(rule.alternatives ?? [])]
       const candidates: string[] = []
@@ -27,7 +28,7 @@ export function buildCoverageIssues(assignments: Assignment[], consultations: Co
         if (!rule.monthly && ((week % rule.every_weeks) + rule.every_weeks) % rule.every_weeks !== 0) continue
         candidates.push(date)
       }
-      const coverage = (date: string) => minimumCoverage(assignments.filter(a => ids.includes(a.consultation_id) && a.work_date === date && !hasAbsence(a.professional_id,date,requests)), rule.start_time, rule.end_time)
+      const coverage = (date: string) => minimumCoverage(workingIntervals(assignments).filter(a => ids.includes(a.consultation_id) && a.work_date === date && !hasAbsence(a.professional_id,date,requests)), rule.start_time, rule.end_time)
       const report = (date: string, count: number, monthly = false) => {
         const plantOne = c.id === 'PLANTA' && count === 1
         const exceptionRule = plantOne && rule.min_staff===2 && !rule.monthly && !rule.alternatives?.length ? rule : undefined

@@ -1010,3 +1010,5 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 @media(max-width:620px){.folder-view-tabs{width:100%;box-sizing:border-box}.folder-view-tabs button{flex:1;padding-inline:7px}.folder-toolbar>.soft-button{width:100%;justify-content:center}}
 
 /* Folder receipts and replies publication. */
+
+.absence-add-actions{margin:16px 0;flex-wrap:wrap}.absence-day .scheduled-absence{background:#edf2f7;color:#263d50}.absence-day small{overflow-wrap:anywhere}
