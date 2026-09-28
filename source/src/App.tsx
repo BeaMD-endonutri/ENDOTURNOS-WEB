@@ -297,9 +297,21 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   ] as Array<[View, typeof CalendarDays, string]>
 
   const addHistory = (before: Assignment | null, after: Assignment | null) => setHistory(rows => [{id:crypto.randomUUID(), assignment_id:(after??before)!.id,action:!before?'INSERT':!after?'DELETE':'UPDATE',actor_name:activeProfile.display_name,changed_at:new Date().toISOString(),before_data:before,after_data:after},...rows])
-  const saveAssignment = async (next: AssignmentDraft): Promise<string | null> => {
-    if (demo) { const before=assignments.find(a=>a.id===next.id)??null; const row={...next,id:next.id??crypto.randomUUID(),updated_at:new Date().toISOString()}; setAssignments(prev=>before?prev.map(a=>a.id===row.id?row:a):[...prev,row]);addHistory(before,row);return null }
-    const {error}=await supabase!.rpc('et_save_assignment',{p_data:next,p_id:next.id??null,p_expected_updated_at:next.updated_at??null});if(error)return error.code==='23505'?'Ya existe ese turno para esta persona. Edita la asignación existente.':error.message;await loadData();return null
+  const saveAssignment = async (next: AssignmentDraft|AssignmentDraft[]): Promise<string | null> => {
+    const rows=Array.isArray(next)?next:[next]
+    if (demo) {
+      setAssignments(prev=>{
+        let out=[...prev]
+        for(const item of rows){const before=out.find(a=>a.id===item.id)??null;const row={...item,id:item.id??crypto.randomUUID(),updated_at:new Date().toISOString()} as Assignment;out=before?out.map(a=>a.id===row.id?row:a):[...out,row];addHistory(before,row)}
+        return out
+      })
+      return null
+    }
+    for(const item of rows){
+      const {error}=await supabase!.rpc('et_save_assignment',{p_data:item,p_id:item.id??null,p_expected_updated_at:item.updated_at??null})
+      if(error){await loadData();return error.code==='23505'?'Ya existe una ausencia o turno para esta persona en alguno de los días seleccionados. Revisa el periodo.':error.message}
+    }
+    await loadData();return null
   }
   const removeAssignment = async (a: Assignment): Promise<string | null> => {
     if (demo) {setAssignments(prev=>prev.filter(row=>row.id!==a.id));addHistory(a,null);return null}
