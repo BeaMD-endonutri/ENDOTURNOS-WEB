@@ -254,7 +254,7 @@ textarea { min-height: 100px; resize: vertical; }
 
 @media (max-width: 980px) {
   .auth-page { grid-template-columns: 1fr; }.auth-story { min-height: 330px; padding: 45px; }.auth-story h1 { font-size: 58px; margin: 22px 0; }.auth-story > p { margin-bottom: 0; }.mascot-cluster { position: absolute; right: 25px; bottom: 15px; height: 100px; }.mascot-cluster img { width: 82px; height: 82px; margin-left: -28px; }
-  .app-shell { grid-template-columns: 1fr; }.sidebar { position: fixed; left: 0; width: 235px; transform: translate3d(-102%,0,0); transition: transform .14s ease-out; will-change: transform; box-shadow: 20px 0 50px #06271950; }.sidebar.open { transform: translate3d(0,0,0); }.menu-button { display: grid; margin-right: 14px; }.split-layout, .profile-layout { grid-template-columns: 1fr; }.welcome-card .soft-button { display: none; }.form-grid, .consultation-fields { grid-template-columns: 1fr 1fr; }
+  .app-shell { grid-template-columns: 1fr; }.sidebar { position: fixed; left: -250px; width: 235px; transition: .25s; box-shadow: 20px 0 50px #06271950; }.sidebar.open { left: 0; }.menu-button { display: grid; margin-right: 14px; }.split-layout, .profile-layout { grid-template-columns: 1fr; }.welcome-card .soft-button { display: none; }.form-grid, .consultation-fields { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -1012,19 +1012,3 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 /* Folder receipts and replies publication. */
 
 .absence-add-actions{margin:16px 0;flex-wrap:wrap}.absence-day .scheduled-absence{background:#edf2f7;color:#263d50}.absence-day small{overflow-wrap:anywhere}
-
-@media (max-width: 980px) {
-  .topbar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: #f7f9f5; }
-}
-
-
-/* Performance: skip rendering long cards until they approach the viewport. */
-.history-list > .panel,
-.requests-cards > .panel,
-.broadcast-list > .panel,
-.team-grid > .person-card,
-.folder-paper-stack > .folder-sheet,
-.task-board > .task-postit {
-  content-visibility: auto;
-  contain-intrinsic-size: 180px;
-}
