@@ -165,6 +165,10 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
   const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([])
   const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
+  const navigate = useCallback((next: View) => {
+    setView(next)
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [])
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null)
   const [coverageExceptions,setCoverageExceptions]=useState<CoverageException[]>([])
   const [exceptionIssue,setExceptionIssue]=useState<CoverageIssue|null>(null)
@@ -251,11 +255,14 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     return () => { client.removeChannel(channel) }
   }, [demo, loadData, session])
 
-  const broadcastNotificationIds = profile ? broadcasts.filter(b => b.et_broadcast_recipients.some(r => r.staff_id === profile.id && !r.read_at)).map(b => b.id) : []
-  const requestNotificationIds = profile ? requests.filter(request => profile.role === 'supervisor'
+  const broadcastNotificationIds = useMemo(() => profile ? broadcasts.filter(b => b.et_broadcast_recipients.some(r => r.staff_id === profile.id && !r.read_at)).map(b => b.id) : [], [broadcasts, profile])
+  const requestNotificationIds = useMemo(() => profile ? requests.filter(request => profile.role === 'supervisor'
     ? !request.supervisor_seen_at
-    : request.professional_id === profile.id && !request.professional_seen_at).map(request => request.id) : []
-  const notificationIds = [...broadcastNotificationIds.map(id => `broadcast:${id}`), ...requestNotificationIds.map(id => `request:${id}`)]
+    : request.professional_id === profile.id && !request.professional_seen_at).map(request => request.id) : [], [profile, requests])
+  const notificationIds = useMemo(() => [...broadcastNotificationIds.map(id => `broadcast:${id}`), ...requestNotificationIds.map(id => `request:${id}`)], [broadcastNotificationIds, requestNotificationIds])
+  const coverageIssues = useMemo(() => profile?.role === 'supervisor'
+    ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions)
+    : [], [assignments, consultations, coverageExceptions, profile?.role, requests])
   useEffect(() => {
     if (!dataLoaded) return
     const current = new Set(notificationIds)
@@ -283,7 +290,6 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const unreadBroadcasts = broadcastNotificationIds.length
   const unreadRequests = requestNotificationIds.length
   const unreadTotal = unreadBroadcasts + unreadRequests
-  const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions) : []
   const nav = [
     ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['folders', FolderOpen, 'Mi carpeta'], ['profile', CircleUserRound, 'Mi ficha'],
@@ -356,13 +362,13 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   return <div className="app-shell">
     <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-icon"><Clock3 /></span><div><strong>EndoTurnos</strong><small>Endonutrición</small></div></div>
-      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={view === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false); window.scrollTo({top:0,behavior:'smooth'}) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
+      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={view === key ? 'active' : ''} onClick={() => { navigate(key); setMobileNav(false) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="mini-profile"><img src={mascot.src} alt="" /><div><strong>{activeProfile.display_name}</strong><small>{isSupervisor ? 'Supervisora' : 'Profesional'}</small></div></div><button className="icon-button" title="Cerrar sesión" onClick={() => demo ? onExitDemo() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
     <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'?'calendar-screen':''}`}>
       {loadError && <div role="alert" className="form-message">{loadError}<button className="soft-button" onClick={loadData}>Reintentar</button></div>}
-      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="attention-button messages" aria-label={`Notificaciones: ${unreadTotal} sin leer`} aria-current={view==='notifications'?'page':undefined} onClick={()=>setView('notifications')}><Bell size={19}/><span>Notificaciones</span>{unreadTotal>0&&<b>{unreadTotal}</b>}</button>{isSupervisor&&<button className="attention-button coverage" aria-label={`Cobertura: ${coverageIssues.length} incidencias`} aria-current={view==='incidents'?'page':undefined} onClick={()=>setView('incidents')}><AlertTriangle size={19}/><span>Cobertura</span><b>{coverageIssues.length}</b></button>}<button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
+      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="attention-button messages" aria-label={`Notificaciones: ${unreadTotal} sin leer`} aria-current={view==='notifications'?'page':undefined} onClick={()=>navigate('notifications')}><Bell size={19}/><span>Notificaciones</span>{unreadTotal>0&&<b>{unreadTotal}</b>}</button>{isSupervisor&&<button className="attention-button coverage" aria-label={`Cobertura: ${coverageIssues.length} incidencias`} aria-current={view==='incidents'?'page':undefined} onClick={()=>navigate('incidents')}><AlertTriangle size={19}/><span>Cobertura</span><b>{coverageIssues.length}</b></button>}<button className="avatar-button" title="Mi perfil" onClick={() => navigate('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
       {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
       {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
       {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
@@ -388,7 +394,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
       const active=view===key
       const count=key==='broadcasts'?unreadBroadcasts:key==='requests'?unreadRequests:0
-      return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{setView(key);setMobileNav(false);if(key==='requests')setRequestFocus(null);window.scrollTo({top:0,behavior:'smooth'})}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
+      return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{navigate(key);setMobileNav(false);if(key==='requests')setRequestFocus(null)}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
     })}</nav>
   </div>
 }
