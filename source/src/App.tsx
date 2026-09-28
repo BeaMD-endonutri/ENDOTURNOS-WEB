@@ -183,6 +183,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [dataLoaded, setDataLoaded] = useState(demo)
   const [profile, setProfile] = useState<Staff | null>(demo ? { ...DEMO_STAFF[0], role: 'supervisor', user_id: 'demo' } : null)
   const previousUnread = useRef<Set<string>>(new Set())
+  const realtimeTimers = useRef<Record<string, number>>({})
 
   const loadData = useCallback(async () => {
     if (!supabase || demo || !session) return
@@ -231,29 +232,128 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     setDataLoaded(true)
   }, [demo, session])
 
+  const readAllAssignments = useCallback(async (table: 'et_assignments' | 'et_published_assignments') => {
+    if (!supabase || demo || !session) return null
+    const rows: Assignment[] = []
+    for (let offset = 0;; offset += 500) {
+      const result = await supabase.from(table).select('*').order('id').range(offset, offset + 499)
+      if (result.error) return null
+      rows.push(...result.data as Assignment[])
+      if (result.data.length < 500) return rows
+    }
+  }, [demo, session])
+
+  const reloadDraftAssignments = useCallback(async () => {
+    if (profile?.role !== 'supervisor') return
+    const rows = await readAllAssignments('et_assignments')
+    if (rows) setAssignments(rows)
+  }, [profile?.role, readAllAssignments])
+  const reloadPublishedAssignments = useCallback(async () => {
+    const rows = await readAllAssignments('et_published_assignments')
+    if (!rows) return
+    setPublishedAssignments(rows)
+    if (profile?.role !== 'supervisor') setAssignments(rows)
+  }, [profile?.role, readAllAssignments])
+  const reloadRequests = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_requests').select('*').order('created_at', { ascending: false })
+    if (!error && data) setRequests(data as ShiftRequest[])
+  }, [demo, session])
+  const reloadTasks = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_tasks').select('*').order('task_date')
+    if (!error && data) setTasks(data as PersonalTask[])
+  }, [demo, session])
+  const reloadBroadcasts = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_broadcasts').select('id,title,message,created_by,created_at,et_broadcast_recipients(staff_id,read_at)').order('created_at', { ascending: false })
+    if (!error && data) setBroadcasts(data as TeamBroadcast[])
+  }, [demo, session])
+  const reloadStaff = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_staff').select('*').order('display_name')
+    if (!error && data) {
+      const rows = data as Staff[]
+      setStaff(rows)
+      setProfile(rows.find(p => p.user_id === session.user.id) ?? null)
+    }
+  }, [demo, session])
+  const reloadConsultations = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_consultations').select('*').eq('active', true).order('sort_order')
+    if (!error && data) setConsultations(data as Consultation[])
+  }, [demo, session])
+  const reloadCoverageProfiles = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_staff_coverage').select('*')
+    if (!error && data) setCoverageProfiles(data as CoverageProfile[])
+  }, [demo, session])
+  const reloadHistory = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_assignment_history').select('*').order('changed_at', { ascending: false }).limit(100)
+    if (!error && data) setHistory(data as AssignmentHistory[])
+  }, [demo, session])
+  const reloadPublications = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_rota_publications').select('*')
+    if (!error && data) setPublications(data as RotaPublication[])
+  }, [demo, session])
+  const reloadLockedMonths = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_locked_months').select('*')
+    if (!error && data) setLockedMonths(data as LockedMonth[])
+  }, [demo, session])
+  const reloadExceptions = useCallback(async () => {
+    if (!supabase || demo || !session || profile?.role !== 'supervisor') return
+    const { data, error } = await supabase.from('et_coverage_exceptions').select('*').order('created_at', { ascending: false })
+    if (!error && data) setCoverageExceptions(data as CoverageException[])
+  }, [demo, profile?.role, session])
+  const reloadScheduledBroadcasts = useCallback(async () => {
+    if (!supabase || demo || !session || profile?.role !== 'supervisor') return
+    const { data, error } = await supabase.from('et_scheduled_broadcasts').select('*').order('next_run_at')
+    if (!error && data) setScheduledBroadcasts(data as ScheduledBroadcast[])
+  }, [demo, profile?.role, session])
+  const reloadPlanning = useCallback(async () => {
+    if (!supabase || demo || !session) return
+    const { data, error } = await supabase.from('et_planning_settings').select('*').eq('id', 1).single()
+    if (!error && data) setPlanning(data as PlanningConfig)
+  }, [demo, session])
+  const scheduleRealtimeReload = useCallback((key: string, loader: () => Promise<void>) => {
+    const current = realtimeTimers.current[key]
+    if (current) window.clearTimeout(current)
+    realtimeTimers.current[key] = window.setTimeout(() => {
+      delete realtimeTimers.current[key]
+      void loader()
+    }, 120)
+  }, [])
+
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => {
     if (!supabase || demo || !session) return
     const client = supabase
     const channel = client.channel('endoturnos-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'et_locked_months' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignment_history' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_requests' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_tasks' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcasts' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcast_recipients' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_scheduled_broadcasts' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, () => scheduleRealtimeReload('draft', reloadDraftAssignments))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, () => scheduleRealtimeReload('published', reloadPublishedAssignments))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, () => scheduleRealtimeReload('publications', reloadPublications))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'et_locked_months' }, () => scheduleRealtimeReload('locks', reloadLockedMonths))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, () => scheduleRealtimeReload('exceptions', reloadExceptions))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, () => scheduleRealtimeReload('planning', reloadPlanning))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, () => scheduleRealtimeReload('consultations', reloadConsultations))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, () => scheduleRealtimeReload('staff', reloadStaff))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, () => scheduleRealtimeReload('coverage', reloadCoverageProfiles))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignment_history' }, () => scheduleRealtimeReload('history', reloadHistory))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_requests' }, () => scheduleRealtimeReload('requests', reloadRequests))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_tasks' }, () => scheduleRealtimeReload('tasks', reloadTasks))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcasts' }, () => scheduleRealtimeReload('broadcasts', reloadBroadcasts))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcast_recipients' }, () => scheduleRealtimeReload('broadcasts', reloadBroadcasts))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_scheduled_broadcasts' }, () => scheduleRealtimeReload('scheduled', reloadScheduledBroadcasts))
       .subscribe()
-    return () => { client.removeChannel(channel) }
-  }, [demo, loadData, session])
+    return () => {
+      Object.values(realtimeTimers.current).forEach(timer => window.clearTimeout(timer))
+      realtimeTimers.current = {}
+      client.removeChannel(channel)
+    }
+  }, [demo, reloadBroadcasts, reloadConsultations, reloadCoverageProfiles, reloadDraftAssignments, reloadExceptions, reloadHistory, reloadLockedMonths, reloadPlanning, reloadPublications, reloadPublishedAssignments, reloadRequests, reloadScheduledBroadcasts, reloadStaff, reloadTasks, scheduleRealtimeReload, session])
 
   const broadcastNotificationIds = useMemo(() => profile ? broadcasts.filter(b => b.et_broadcast_recipients.some(r => r.staff_id === profile.id && !r.read_at)).map(b => b.id) : [], [broadcasts, profile])
   const requestNotificationIds = useMemo(() => profile ? requests.filter(request => profile.role === 'supervisor'
