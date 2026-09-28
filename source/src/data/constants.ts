@@ -38,7 +38,37 @@ export const CONSULTATIONS: Consultation[] = [
 ].map(([id, label, short_label, color]) => ({ id, label, short_label, color, active: true }))
 
 export const HOLIDAYS: Record<string, string> = {
-  '2026-10-12': 'Fiesta Nacional', '2026-11-02': 'Todos los Santos (traslado)',
-  '2026-12-07': 'Constitución (traslado)', '2026-12-08': 'Inmaculada',
-  '2026-12-24': 'Festivo contemplado', '2026-12-25': 'Navidad', '2026-12-31': 'Festivo contemplado',
+  // Calendario laboral SAS / Andalucía 2026 + fiestas locales de Huelva capital.
+  '2026-01-01': 'Año Nuevo',
+  '2026-01-06': 'Epifanía del Señor',
+  '2026-02-28': 'Día de Andalucía',
+  '2026-04-02': 'Jueves Santo',
+  '2026-04-03': 'Viernes Santo',
+  '2026-05-01': 'Fiesta del Trabajo',
+  '2026-08-03': 'Fiestas Colombinas · Huelva',
+  '2026-08-15': 'Asunción de la Virgen',
+  '2026-09-08': 'Nuestra Señora de la Cinta · Huelva',
+  '2026-10-12': 'Fiesta Nacional de España',
+  '2026-11-02': 'Todos los Santos (traslado)',
+  '2026-12-07': 'Constitución Española (traslado)',
+  '2026-12-08': 'Inmaculada Concepción',
+  '2026-12-24': 'Festivo contemplado',
+  '2026-12-25': 'Natividad del Señor',
+  '2026-12-31': 'Festivo contemplado',
+
+  // Calendario laboral oficial de Andalucía 2027 + fiestas locales de Huelva capital.
+  '2027-01-01': 'Año Nuevo',
+  '2027-01-06': 'Epifanía del Señor',
+  '2027-03-01': 'Día de Andalucía (traslado)',
+  '2027-03-25': 'Jueves Santo',
+  '2027-03-26': 'Viernes Santo',
+  '2027-05-01': 'Fiesta del Trabajo',
+  '2027-08-03': 'Fiestas Colombinas · Huelva',
+  '2027-08-16': 'Asunción de la Virgen (traslado)',
+  '2027-09-08': 'Nuestra Señora de la Cinta · Huelva',
+  '2027-10-12': 'Fiesta Nacional de España',
+  '2027-11-01': 'Todos los Santos',
+  '2027-12-06': 'Día de la Constitución Española',
+  '2027-12-08': 'Inmaculada Concepción',
+  '2027-12-25': 'Natividad del Señor',
 }
