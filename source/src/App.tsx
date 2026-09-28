@@ -165,10 +165,6 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
   const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([])
   const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
-  const navigate = useCallback((next: View) => {
-    setView(next)
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-  }, [])
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null)
   const [coverageExceptions,setCoverageExceptions]=useState<CoverageException[]>([])
   const [exceptionIssue,setExceptionIssue]=useState<CoverageIssue|null>(null)
@@ -183,7 +179,6 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [dataLoaded, setDataLoaded] = useState(demo)
   const [profile, setProfile] = useState<Staff | null>(demo ? { ...DEMO_STAFF[0], role: 'supervisor', user_id: 'demo' } : null)
   const previousUnread = useRef<Set<string>>(new Set())
-  const realtimeTimers = useRef<Record<string, number>>({})
 
   const loadData = useCallback(async () => {
     if (!supabase || demo || !session) return
@@ -232,138 +227,35 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     setDataLoaded(true)
   }, [demo, session])
 
-  const readAllAssignments = useCallback(async (table: 'et_assignments' | 'et_published_assignments') => {
-    if (!supabase || demo || !session) return null
-    const rows: Assignment[] = []
-    for (let offset = 0;; offset += 500) {
-      const result = await supabase.from(table).select('*').order('id').range(offset, offset + 499)
-      if (result.error) return null
-      rows.push(...result.data as Assignment[])
-      if (result.data.length < 500) return rows
-    }
-  }, [demo, session])
-
-  const reloadDraftAssignments = useCallback(async () => {
-    if (profile?.role !== 'supervisor') return
-    const rows = await readAllAssignments('et_assignments')
-    if (rows) setAssignments(rows)
-  }, [profile?.role, readAllAssignments])
-  const reloadPublishedAssignments = useCallback(async () => {
-    const rows = await readAllAssignments('et_published_assignments')
-    if (!rows) return
-    setPublishedAssignments(rows)
-    if (profile?.role !== 'supervisor') setAssignments(rows)
-  }, [profile?.role, readAllAssignments])
-  const reloadRequests = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_requests').select('*').order('created_at', { ascending: false })
-    if (!error && data) setRequests(data as ShiftRequest[])
-  }, [demo, session])
-  const reloadTasks = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_tasks').select('*').order('task_date')
-    if (!error && data) setTasks(data as PersonalTask[])
-  }, [demo, session])
-  const reloadBroadcasts = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_broadcasts').select('id,title,message,created_by,created_at,et_broadcast_recipients(staff_id,read_at)').order('created_at', { ascending: false })
-    if (!error && data) setBroadcasts(data as TeamBroadcast[])
-  }, [demo, session])
-  const reloadStaff = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_staff').select('*').order('display_name')
-    if (!error && data) {
-      const rows = data as Staff[]
-      setStaff(rows)
-      setProfile(rows.find(p => p.user_id === session.user.id) ?? null)
-    }
-  }, [demo, session])
-  const reloadConsultations = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_consultations').select('*').eq('active', true).order('sort_order')
-    if (!error && data) setConsultations(data as Consultation[])
-  }, [demo, session])
-  const reloadCoverageProfiles = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_staff_coverage').select('*')
-    if (!error && data) setCoverageProfiles(data as CoverageProfile[])
-  }, [demo, session])
-  const reloadHistory = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_assignment_history').select('*').order('changed_at', { ascending: false }).limit(100)
-    if (!error && data) setHistory(data as AssignmentHistory[])
-  }, [demo, session])
-  const reloadPublications = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_rota_publications').select('*')
-    if (!error && data) setPublications(data as RotaPublication[])
-  }, [demo, session])
-  const reloadLockedMonths = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_locked_months').select('*')
-    if (!error && data) setLockedMonths(data as LockedMonth[])
-  }, [demo, session])
-  const reloadExceptions = useCallback(async () => {
-    if (!supabase || demo || !session || profile?.role !== 'supervisor') return
-    const { data, error } = await supabase.from('et_coverage_exceptions').select('*').order('created_at', { ascending: false })
-    if (!error && data) setCoverageExceptions(data as CoverageException[])
-  }, [demo, profile?.role, session])
-  const reloadScheduledBroadcasts = useCallback(async () => {
-    if (!supabase || demo || !session || profile?.role !== 'supervisor') return
-    const { data, error } = await supabase.from('et_scheduled_broadcasts').select('*').order('next_run_at')
-    if (!error && data) setScheduledBroadcasts(data as ScheduledBroadcast[])
-  }, [demo, profile?.role, session])
-  const reloadPlanning = useCallback(async () => {
-    if (!supabase || demo || !session) return
-    const { data, error } = await supabase.from('et_planning_settings').select('*').eq('id', 1).single()
-    if (!error && data) setPlanning(data as PlanningConfig)
-  }, [demo, session])
-  const reloadBroadcastSection = useCallback(async () => { await Promise.all([reloadBroadcasts(), reloadScheduledBroadcasts()]) }, [reloadBroadcasts, reloadScheduledBroadcasts])
-  const reloadTeamSection = useCallback(async () => { await Promise.all([reloadStaff(), reloadCoverageProfiles()]) }, [reloadStaff, reloadCoverageProfiles])
-  const reloadProfileSection = useCallback(async () => { await Promise.all([reloadStaff(), reloadCoverageProfiles()]) }, [reloadStaff, reloadCoverageProfiles])
-
-  const scheduleRealtimeReload = useCallback((key: string, loader: () => Promise<void>) => {
-    const current = realtimeTimers.current[key]
-    if (current) window.clearTimeout(current)
-    realtimeTimers.current[key] = window.setTimeout(() => {
-      delete realtimeTimers.current[key]
-      void loader()
-    }, 120)
-  }, [])
-
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => {
     if (!supabase || demo || !session) return
     const client = supabase
     const channel = client.channel('endoturnos-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, () => scheduleRealtimeReload('draft', reloadDraftAssignments))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, () => scheduleRealtimeReload('published', reloadPublishedAssignments))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, () => scheduleRealtimeReload('publications', reloadPublications))
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'et_locked_months' }, () => scheduleRealtimeReload('locks', reloadLockedMonths))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, () => scheduleRealtimeReload('exceptions', reloadExceptions))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, () => scheduleRealtimeReload('planning', reloadPlanning))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, () => scheduleRealtimeReload('consultations', reloadConsultations))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, () => scheduleRealtimeReload('staff', reloadStaff))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, () => scheduleRealtimeReload('coverage', reloadCoverageProfiles))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignment_history' }, () => scheduleRealtimeReload('history', reloadHistory))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_requests' }, () => scheduleRealtimeReload('requests', reloadRequests))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_tasks' }, () => scheduleRealtimeReload('tasks', reloadTasks))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcasts' }, () => scheduleRealtimeReload('broadcasts', reloadBroadcasts))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcast_recipients' }, () => scheduleRealtimeReload('broadcasts', reloadBroadcasts))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_scheduled_broadcasts' }, () => scheduleRealtimeReload('scheduled', reloadScheduledBroadcasts))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignments' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_published_assignments' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_rota_publications' }, loadData)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'et_locked_months' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_coverage_exceptions' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_planning_settings' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_consultations' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_staff_coverage' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_assignment_history' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_requests' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_tasks' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcasts' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_broadcast_recipients' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'et_scheduled_broadcasts' }, loadData)
       .subscribe()
-    return () => {
-      Object.values(realtimeTimers.current).forEach(timer => window.clearTimeout(timer))
-      realtimeTimers.current = {}
-      client.removeChannel(channel)
-    }
-  }, [demo, reloadBroadcasts, reloadConsultations, reloadCoverageProfiles, reloadDraftAssignments, reloadExceptions, reloadHistory, reloadLockedMonths, reloadPlanning, reloadPublications, reloadPublishedAssignments, reloadRequests, reloadScheduledBroadcasts, reloadStaff, reloadTasks, scheduleRealtimeReload, session])
+    return () => { client.removeChannel(channel) }
+  }, [demo, loadData, session])
 
-  const broadcastNotificationIds = useMemo(() => profile ? broadcasts.filter(b => b.et_broadcast_recipients.some(r => r.staff_id === profile.id && !r.read_at)).map(b => b.id) : [], [broadcasts, profile])
-  const requestNotificationIds = useMemo(() => profile ? requests.filter(request => profile.role === 'supervisor'
+  const broadcastNotificationIds = profile ? broadcasts.filter(b => b.et_broadcast_recipients.some(r => r.staff_id === profile.id && !r.read_at)).map(b => b.id) : []
+  const requestNotificationIds = profile ? requests.filter(request => profile.role === 'supervisor'
     ? !request.supervisor_seen_at
-    : request.professional_id === profile.id && !request.professional_seen_at).map(request => request.id) : [], [profile, requests])
-  const notificationIds = useMemo(() => [...broadcastNotificationIds.map(id => `broadcast:${id}`), ...requestNotificationIds.map(id => `request:${id}`)], [broadcastNotificationIds, requestNotificationIds])
+    : request.professional_id === profile.id && !request.professional_seen_at).map(request => request.id) : []
+  const notificationIds = [...broadcastNotificationIds.map(id => `broadcast:${id}`), ...requestNotificationIds.map(id => `request:${id}`)]
   useEffect(() => {
     if (!dataLoaded) return
     const current = new Set(notificationIds)
@@ -392,8 +284,6 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const unreadRequests = requestNotificationIds.length
   const unreadTotal = unreadBroadcasts + unreadRequests
   const coverageIssues = isSupervisor ? buildCoverageIssues(assignments, consultations, requests, undefined, undefined, coverageExceptions) : []
-  const professionalStaff = staff.filter(s => s.active && s.role === 'professional')
-  const visibleConsultations = consultations.filter(c => !isAbsence(c.id))
   const nav = [
     ['home', Home, 'Inicio'],
     ['calendar', CalendarDays, 'Cuadrante'], ['broadcasts', Megaphone, 'Avisos'], ['requests', Bell, 'Solicitudes'], ['tasks', ClipboardList, 'Mis tareas'], ['folders', FolderOpen, 'Mi carpeta'], ['profile', CircleUserRound, 'Mi ficha'],
@@ -403,19 +293,19 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const addHistory = (before: Assignment | null, after: Assignment | null) => setHistory(rows => [{id:crypto.randomUUID(), assignment_id:(after??before)!.id,action:!before?'INSERT':!after?'DELETE':'UPDATE',actor_name:activeProfile.display_name,changed_at:new Date().toISOString(),before_data:before,after_data:after},...rows])
   const saveAssignment = async (next: AssignmentDraft): Promise<string | null> => {
     if (demo) { const before=assignments.find(a=>a.id===next.id)??null; const row={...next,id:next.id??crypto.randomUUID(),updated_at:new Date().toISOString()}; setAssignments(prev=>before?prev.map(a=>a.id===row.id?row:a):[...prev,row]);addHistory(before,row);return null }
-    const {error}=await supabase!.rpc('et_save_assignment',{p_data:next,p_id:next.id??null,p_expected_updated_at:next.updated_at??null});if(error)return error.code==='23505'?'Ya existe ese turno para esta persona. Edita la asignación existente.':error.message;await Promise.all([reloadDraftAssignments(), reloadHistory()]);return null
+    const {error}=await supabase!.rpc('et_save_assignment',{p_data:next,p_id:next.id??null,p_expected_updated_at:next.updated_at??null});if(error)return error.code==='23505'?'Ya existe ese turno para esta persona. Edita la asignación existente.':error.message;await loadData();return null
   }
   const removeAssignment = async (a: Assignment): Promise<string | null> => {
     if (demo) {setAssignments(prev=>prev.filter(row=>row.id!==a.id));addHistory(a,null);return null}
-    const {error}=await supabase!.rpc('et_delete_assignment',{p_id:a.id,p_expected_updated_at:a.updated_at});if(error)return error.message;await Promise.all([reloadDraftAssignments(), reloadHistory()]);return null
+    const {error}=await supabase!.rpc('et_delete_assignment',{p_id:a.id,p_expected_updated_at:a.updated_at});if(error)return error.message;await loadData();return null
   }
   const undoAssignment = async (h: AssignmentHistory, reason: string | null): Promise<string | null> => {
     if(demo){const current=assignments.find(a=>a.id===h.assignment_id)??null;const restored=h.before_data?{...h.before_data,override_reason:reason}:null;setAssignments(rows=>[...rows.filter(a=>a.id!==h.assignment_id),...(restored?[restored]:[])]);addHistory(current,restored);return null}
-    const {error}=await supabase!.rpc('et_undo_assignment',{p_history_id:h.id,p_reason:reason});if(error)return error.message;await Promise.all([reloadDraftAssignments(), reloadHistory()]);return null
+    const {error}=await supabase!.rpc('et_undo_assignment',{p_history_id:h.id,p_reason:reason});if(error)return error.message;await loadData();return null
   }
   const copyAssignments = async (rows: CopyPreviewRow[], reviewed: boolean): Promise<string | null> => {
     if(demo){const next=rows.map(r=>({...r.target,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(items=>[...items,...next]);next.forEach(a=>addHistory(null,a));return null}
-    const {error}=await supabase!.rpc('et_copy_assignments',{p_rows:rows.map(r=>({source_id:r.source.id,source_updated_at:r.source.updated_at,target_date:r.target.work_date,accept_review:reviewed}))});if(error)return error.message;await Promise.all([reloadDraftAssignments(), reloadHistory()]);return null
+    const {error}=await supabase!.rpc('et_copy_assignments',{p_rows:rows.map(r=>({source_id:r.source.id,source_updated_at:r.source.updated_at,target_date:r.target.work_date,accept_review:reviewed}))});if(error)return error.message;await loadData();return null
   }
   const lockMonth = async (month:string):Promise<string|null> => {
     if(demo){
@@ -443,62 +333,62 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     const {data,error}=await supabase!.from('et_coverage_exceptions').insert(content).select('*').single()
     if(error)return error.code==='23505'?'Ya hay una excepción para esta franja. Revísala en Cobertura → Excepciones de Planta.':error.message
     if(!data)return 'No se ha podido confirmar la excepción.'
-    setCoverageExceptions(rows=>[data as CoverageException,...rows.filter(e=>e.id!==data.id)]);return null
+    setCoverageExceptions(rows=>[data as CoverageException,...rows.filter(e=>e.id!==data.id)]);await loadData();return null
   }
   const revokeCoverageException=async(id:string):Promise<string|null>=>{
     if(demo){setCoverageExceptions(rows=>rows.map(e=>e.id===id?{...e,revoked_at:new Date().toISOString()}:e));return null}
     const {data,error}=await supabase!.from('et_coverage_exceptions').update({revoked_at:new Date().toISOString()}).eq('id',id).is('revoked_at',null).select('*')
     if(error)return error.message
-    if(!data?.length){await reloadExceptions();return 'La excepción ya ha cambiado. Se han actualizado los datos.'}
-    setCoverageExceptions(rows=>rows.map(e=>e.id===id?data[0] as CoverageException:e));return null
+    if(!data?.length){await loadData();return 'La excepción ya ha cambiado. Se han actualizado los datos.'}
+    setCoverageExceptions(rows=>rows.map(e=>e.id===id?data[0] as CoverageException:e));await loadData();return null
   }
   const savePlanning=async(next:PlanningConfig):Promise<string|null>=>{
     if(demo){setPlanning({...next,updated_at:new Date().toISOString()});setCalendarFocusDate(null);setShiftSelection(null);return null}
     const {data,error}=await supabase!.from('et_planning_settings').update({start_date:next.start_date,end_date:next.end_date,holidays:next.holidays}).eq('id',1).eq('updated_at',next.updated_at).select('*')
     if(error)return error.message
     if(!data?.length)return 'La configuración ha cambiado en otra sesión. Pulsa Recargar configuración antes de guardar.'
-    setCalendarFocusDate(null);setShiftSelection(null);setExceptionIssue(null);await reloadPlanning();return null
+    setCalendarFocusDate(null);setShiftSelection(null);setExceptionIssue(null);await loadData();return null
   }
   const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
-  const openCalendar = (date:string) => { setCalendarFocusDate(date); navigate('calendar') }
-  const openRequest = (id?:string) => { setRequestFocus(id??null); navigate('requests') }
+  const openCalendar = (date:string) => {setCalendarFocusDate(date);setView('calendar')}
+  const openRequest = (id?:string) => {setRequestFocus(id??null);setView('requests')}
 
   return <div className="app-shell">
     <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-icon"><Clock3 /></span><div><strong>EndoTurnos</strong><small>Endonutrición</small></div></div>
-      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={view === key ? 'active' : ''} onClick={() => { navigate(key); setMobileNav(false) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
+      <nav aria-label="Menú principal">{nav.map(([key, Icon, label]) => <button key={key} aria-current={view===key?'page':undefined} className={view === key ? 'active' : ''} onClick={() => { setView(key); setMobileNav(false); window.scrollTo({top:0,behavior:'smooth'}) }}><Icon size={19} />{label}{key === 'broadcasts' && unreadBroadcasts > 0 && <b>{unreadBroadcasts}</b>}{key === 'requests' && unreadRequests > 0 && <b>{unreadRequests}</b>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="mini-profile"><img src={mascot.src} alt="" /><div><strong>{activeProfile.display_name}</strong><small>{isSupervisor ? 'Supervisora' : 'Profesional'}</small></div></div><button className="icon-button" title="Cerrar sesión" onClick={() => demo ? onExitDemo() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav&&<button className="mobile-menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMobileNav(false)}/>}
     <main className={`main-content ${isSupervisor ? 'supervisor-workspace' : ''} ${view==='calendar'?'calendar-screen':''}`}>
       {loadError && <div role="alert" className="form-message">{loadError}<button className="soft-button" onClick={loadData}>Reintentar</button></div>}
-      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="attention-button messages" aria-label={`Notificaciones: ${unreadTotal} sin leer`} aria-current={view==='notifications'?'page':undefined} onClick={()=>navigate('notifications')}><Bell size={19}/><span>Notificaciones</span>{unreadTotal>0&&<b>{unreadTotal}</b>}</button>{isSupervisor&&<button className="attention-button coverage" aria-label={`Cobertura: ${coverageIssues.length} incidencias`} aria-current={view==='incidents'?'page':undefined} onClick={()=>navigate('incidents')}><AlertTriangle size={19}/><span>Cobertura</span><b>{coverageIssues.length}</b></button>}<button className="avatar-button" title="Mi perfil" onClick={() => navigate('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
+      <header className="topbar"><button aria-label="Abrir menú" aria-expanded={mobileNav} aria-controls="main-menu" className="menu-button" onClick={() => setMobileNav(v => !v)}><Menu /></button><div className="sync"><span></span>Actualizado al instante · {format(syncedAt, 'HH:mm')}</div><div className="top-actions"><button className="attention-button messages" aria-label={`Notificaciones: ${unreadTotal} sin leer`} aria-current={view==='notifications'?'page':undefined} onClick={()=>setView('notifications')}><Bell size={19}/><span>Notificaciones</span>{unreadTotal>0&&<b>{unreadTotal}</b>}</button>{isSupervisor&&<button className="attention-button coverage" aria-label={`Cobertura: ${coverageIssues.length} incidencias`} aria-current={view==='incidents'?'page':undefined} onClick={()=>setView('incidents')}><AlertTriangle size={19}/><span>Cobertura</span><b>{coverageIssues.length}</b></button>}<button className="avatar-button" title="Mi perfil" onClick={() => setView('profile')}><img src={mascot.src} alt={mascot.name} /></button></div></header>
       {(isSupervisor||view!=='home')&&<Welcome profile={activeProfile} mascot={mascot} todayAssignments={todayAssignments} consultations={consultations} onAddTask={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
-      {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => navigate('incidents')} />}
-      {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => navigate('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => navigate('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
-      {view === 'home' && <HomeTaskStrip tasks={tasks} profile={activeProfile} demo={demo} onChange={setTasks} reload={reloadTasks} onOpenTasks={() => { setTaskComposerNonce(value => value + 1); navigate('tasks') }} />}
+      {isSupervisor && view !== 'home' && view !== 'incidents' && coverageIssues.length > 0 && <CoverageAlert issues={coverageIssues} onOpen={() => setView('incidents')} />}
+      {unreadTotal > 0 && view!=='notifications' && (isSupervisor||view!=='home') && <div className="notification-strip" aria-label="Notificaciones nuevas">{unreadBroadcasts > 0 && view !== 'broadcasts' && <button className="unread-banner" onClick={() => setView('broadcasts')}><Megaphone size={18} /><span>{unreadBroadcasts === 1 ? '1 aviso nuevo' : `${unreadBroadcasts} avisos nuevos`}</span><strong>Ver avisos</strong></button>}{unreadRequests > 0 && view !== 'requests' && <button className="unread-banner request-alert" onClick={() => setView('requests')}><Bell size={18} /><span>{unreadRequests === 1 ? '1 novedad en solicitudes' : `${unreadRequests} novedades en solicitudes`}</span><strong>Ver solicitudes</strong></button>}</div>}
+      {view === 'home' && <HomeTaskStrip tasks={tasks} profile={activeProfile} demo={demo} onChange={setTasks} reload={loadData} onOpenTasks={() => { setTaskComposerNonce(value => value + 1); setView('tasks') }} />}
       {view === 'home' && isSupervisor && <div className="publication-panel draft"><div><div><strong>Planificación en borrador</strong><p>Los cambios que guardes solo los verá el equipo cuando publiques el mes.</p></div></div><button className="soft-button" onClick={()=>openCalendar(calendarFocusDate??planning.start_date)}>Revisar publicación</button></div>}
-      {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>navigate('broadcasts')} onTeam={()=>navigate('team')} />}
-      {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>navigate('broadcasts')} onRequest={openRequest}/> }
-      {view === 'calendar' && <CalendarPanel suggestionContext={{staff,consultations,assignments,requests,profiles:coverageProfiles,exceptions:coverageExceptions,planning,fingerprint:'demo'}} onSuggestionSaved={async rows=>{if(demo){const added=rows.map(a=>({...a,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(current=>[...current,...added]);added.forEach(a=>addHistory(null,a))}else await Promise.all([reloadDraftAssignments(), reloadHistory()])}} onConsultations={()=>navigate('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} lockedMonths={lockedMonths} onLock={lockMonth} onPublish={publishRota} staff={professionalStaff} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
+      {view === 'home' && isSupervisor && <SupervisorHome onException={setExceptionIssue} staff={staff} consultations={consultations} assignments={assignments} requests={requests} issues={coverageIssues} profile={activeProfile} onAssign={setShiftSelection} onCalendar={openCalendar} onRequest={openRequest} onBroadcast={()=>setView('broadcasts')} onTeam={()=>setView('team')} />}
+      {view === 'home' && !isSupervisor && <ProfessionalHome profile={activeProfile} publishedAssignments={publishedAssignments} consultations={consultations} requests={requests} broadcasts={broadcasts} today={currentDay} onCalendar={openCalendar} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/> }
+      {view === 'calendar' && <CalendarPanel suggestionContext={{staff,consultations,assignments,requests,profiles:coverageProfiles,exceptions:coverageExceptions,planning,fingerprint:'demo'}} onSuggestionSaved={async rows=>{if(demo){const added=rows.map(a=>({...a,id:crypto.randomUUID(),updated_at:new Date().toISOString()}));setAssignments(current=>[...current,...added]);added.forEach(a=>addHistory(null,a))}else await loadData()}} onConsultations={()=>setView('consultations')} key={planning.start_date+planning.end_date} onException={setExceptionIssue} demo={demo} publications={publications} publishedAssignments={publishedAssignments} lockedMonths={lockedMonths} onLock={lockMonth} onPublish={publishRota} staff={staff.filter(s=>s.active&&s.role==='professional')} assignments={assignments} consultations={consultations} profile={activeProfile} isSupervisor={isSupervisor} issues={coverageIssues} focusDate={calendarFocusDate} onSelect={setShiftSelection} requests={requests} coverageProfiles={coverageProfiles} syncedAt={syncedAt} onCopy={copyAssignments} onRequest={id=>openRequest(id)} />}
       {view === 'notifications' && <NotificationsPanel broadcasts={broadcasts.filter(b=>broadcastNotificationIds.includes(b.id))} requests={requests.filter(r=>requestNotificationIds.includes(r.id))} onBroadcasts={()=>setView('broadcasts')} onRequest={openRequest}/>}
       {view === 'incidents' && isSupervisor && <CoverageIssuesPanel onException={setExceptionIssue} exceptions={coverageExceptions} onRevoke={revokeCoverageException} issues={coverageIssues} onAssign={setShiftSelection} onCalendar={openCalendar}/>}
-      {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} scheduled={scheduledBroadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} onScheduledChange={setScheduledBroadcasts} reload={reloadBroadcastSection} />}
+      {view === 'broadcasts' && <BroadcastsView broadcasts={broadcasts} scheduled={scheduledBroadcasts} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setBroadcasts} onScheduledChange={setScheduledBroadcasts} reload={loadData} />}
       {view === 'requests' && <RequestsPanel consultations={consultations} publishedAssignments={publishedAssignments} onCalendar={openCalendar} onReassign={assignment=>setShiftSelection({date:assignment.work_date,personId:assignment.professional_id,consultationId:assignment.consultation_id,startTime:assignment.start_time,endTime:assignment.end_time,assignmentId:assignment.id,findCoverage:true})} requests={requests} unreadIds={requestNotificationIds} staff={staff} profile={activeProfile} isSupervisor={isSupervisor} demo={demo} onChange={setRequests} reload={loadData} assignments={assignments} focusId={requestFocus} />}
       {view === 'history' && isSupervisor && <HistoryPanel history={history} staff={staff} consultations={consultations} assignments={assignments} requests={requests} onUndo={undoAssignment} />}
       {exceptionIssue && <ExceptionDialog issue={exceptionIssue} onClose={()=>setExceptionIssue(null)} onSave={reason=>saveCoverageException(exceptionIssue,reason)}/> }
       {shiftSelection && <ShiftEditor selection={shiftSelection} staff={staff} assignments={assignments} requests={requests} consultations={consultations} editable={isSupervisor&&!lockedMonths.some(m=>m.month===shiftSelection.date.slice(0,7)+'-01')} locked={lockedMonths.some(m=>m.month===shiftSelection.date.slice(0,7)+'-01')} coverageProfiles={coverageProfiles} onClose={()=>setShiftSelection(null)} onSave={saveAssignment} onRemove={removeAssignment} />}
-      {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={reloadTasks} />}
+      {view === 'tasks' && <TasksView tasks={tasks} profile={activeProfile} demo={demo} focusNonce={taskComposerNonce} onChange={setTasks} reload={loadData} />}
       {view === 'folders' && <FoldersView profile={activeProfile} staff={staff} demo={demo} />}
-      {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={reloadTeamSection} />}
-      {view === 'consultations' && isSupervisor && <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Consultas</h1><p>Gestiona horarios, profesionales necesarios y periodos de suspensión de cada consulta.</p></div></div><ConsultationManager staff={staff} consultations={visibleConsultations} demo={demo} onChange={setConsultations} reload={reloadConsultations} /></section>}
-      {view === 'settings' && isSupervisor && <SettingsView onNavigate={navigate} onSave={savePlanning} />}
+      {view === 'team' && isSupervisor && <TeamView coverageProfiles={coverageProfiles} onCoverageChange={setCoverageProfiles} staff={staff} consultations={consultations} demo={demo} onChange={setStaff} reload={loadData} />}
+      {view === 'consultations' && isSupervisor && <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Consultas</h1><p>Gestiona horarios, profesionales necesarios y periodos de suspensión de cada consulta.</p></div></div><ConsultationManager staff={staff} consultations={consultations.filter(c=>!isAbsence(c.id))} demo={demo} onChange={setConsultations} reload={loadData} /></section>}
+      {view === 'settings' && isSupervisor && <SettingsView onNavigate={setView} onSave={savePlanning} />}
       {view === 'profile' && <ProfileView coverageProfile={coverageProfiles.find(p=>p.staff_id===activeProfile.id)} onCoverageChange={setCoverageProfiles} consultations={consultations} profile={activeProfile} demo={demo} onUpdated={(key) => { setProfile(p => p ? { ...p, mascot_key: key } : p); setStaff(p => p.map(s => s.id === activeProfile.id ? { ...s, mascot_key: key } : s)) }} reload={loadData} />}
     </main>
     <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">{mobileItems.map(([key,Icon,label])=>{
       const active=view===key
       const count=key==='broadcasts'?unreadBroadcasts:key==='requests'?unreadRequests:0
-      return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{navigate(key);setMobileNav(false);if(key==='requests')setRequestFocus(null)}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
+      return <button key={key} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>{setView(key);setMobileNav(false);if(key==='requests')setRequestFocus(null);window.scrollTo({top:0,behavior:'smooth'})}}><span><Icon size={21}/>{count>0&&<b aria-label={`${count} sin leer`}>{count>99?'99+':count}</b>}</span><small>{label}</small></button>
     })}</nav>
   </div>
 }
