@@ -1197,3 +1197,23 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
   content-visibility: auto;
   contain-intrinsic-size: 180px;
 }
+
+
+/* Ausencias y descansos: lectura inmediata en cuadrante. */
+.shift-cell.absence-vac { background:#d8f1e5; }
+.shift-cell.absence-perm { background:#eadcf0; }
+.shift-cell.absence-for { background:#ffe3c7; }
+.shift-cell.absence-rest { background:#e3e5e6; }
+.shift-cell.absence-vac.closed { background:#d8f1e5; }
+.shift-cell.absence-perm.closed { background:#eadcf0; }
+.shift-cell.absence-for.closed { background:#ffe3c7; }
+.shift-cell.absence-rest.closed { background:#e3e5e6; }
+.shift-cell.absence-vac:hover,.shift-cell.absence-perm:hover,.shift-cell.absence-for:hover,.shift-cell.absence-rest:hover { filter:brightness(.98); }
+.absence-preview-vac { background:#d8f1e5;color:#245b45; }
+.absence-preview-perm { background:#eadcf0;color:#674b78; }
+.absence-preview-for { background:#ffe3c7;color:#87501d; }
+.absence-preview-rest { background:#e3e5e6;color:#52595d; }
+.agenda-shift.agenda-absence-vac { background:#d8f1e580; }
+.agenda-shift.agenda-absence-perm { background:#eadcf080; }
+.agenda-shift.agenda-absence-for { background:#ffe3c780; }
+.agenda-shift.agenda-absence-rest { background:#e3e5e690; }
