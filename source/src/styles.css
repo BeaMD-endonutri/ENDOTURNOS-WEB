@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,650;1,650&family=Nunito:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,650;1,650&family=Nunito:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600;1,700&display=swap&display=swap');
 
 :root { font-family: 'DM Sans', system-ui, sans-serif; color: #18372b; background: #f3f6f0; font-synthesis: none; --green: #2f6f55; --deep: #194936; --mint: #dceadd; --cream: #fffdf7; --coral: #e57c62; --line: #dce5dc; }
 * { box-sizing: border-box; }
@@ -1031,5 +1031,73 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
   .task-board > .task-postit {
     content-visibility: auto;
     contain-intrinsic-size: 180px;
+  }
+}
+
+
+/* Supervisor mobile density: show useful information sooner without changing app logic. */
+@media (max-width: 700px) {
+  .supervisor-workspace .topbar {
+    height: 58px;
+    padding-inline: 12px;
+  }
+  .supervisor-workspace .welcome-card {
+    min-height: 82px;
+    margin: 12px 14px 0;
+    padding: 11px 12px 11px 78px;
+    border-radius: 16px;
+  }
+  .supervisor-workspace .welcome-card > img {
+    width: 72px;
+    height: 72px;
+    left: 5px;
+    bottom: -3px;
+  }
+  .supervisor-workspace .welcome-card h2 {
+    font-size: 21px;
+    margin-block: 1px 2px;
+  }
+  .supervisor-workspace .welcome-card p {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .supervisor-workspace .welcome-card > div > span {
+    font-size: 9px;
+  }
+  .supervisor-workspace .welcome-card .soft-button {
+    display: none;
+  }
+  .supervisor-workspace .content-section {
+    padding: 18px 14px 26px;
+  }
+  .supervisor-workspace .section-heading {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .supervisor-workspace .section-heading h1 {
+    font-size: 30px;
+    margin-block: 2px 4px;
+  }
+  .supervisor-workspace .section-heading p {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .supervisor-workspace .notification-strip {
+    margin-inline: 14px;
+  }
+  .supervisor-workspace .coverage-banner {
+    width: calc(100% - 28px);
+    margin-inline: 14px;
+  }
+  .supervisor-workspace .panel {
+    padding: 16px;
+    border-radius: 15px;
+  }
+}
+@media (hover: none) and (pointer: coarse) {
+  .primary:hover,
+  .icon-action:hover,
+  .mascot-cluster img:hover {
+    transform: none;
   }
 }
