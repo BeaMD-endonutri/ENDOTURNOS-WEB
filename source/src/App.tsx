@@ -460,8 +460,8 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     setCalendarFocusDate(null);setShiftSelection(null);setExceptionIssue(null);await reloadPlanning();return null
   }
   const mobileItems = nav.filter(([key])=>['home','calendar','broadcasts','requests','profile'].includes(key))
-  const openCalendar = useCallback((date:string) => { setCalendarFocusDate(date); navigate('calendar') }, [navigate])
-  const openRequest = useCallback((id?:string) => { setRequestFocus(id??null); navigate('requests') }, [navigate])
+  const openCalendar = (date:string) => { setCalendarFocusDate(date); navigate('calendar') }
+  const openRequest = (id?:string) => { setRequestFocus(id??null); navigate('requests') }
 
   return <div className="app-shell">
     <aside id="main-menu" className={mobileNav ? 'sidebar open' : 'sidebar'}>
