@@ -11,7 +11,6 @@ import { MASCOTS } from '../data/constants'
 import type { Assignment,Consultation,CoverageProfile,ShiftRequest,Staff,RotaPublication,LockedMonth } from '../types'
 import type { CoverageIssue } from '../lib/coverage'
 import CopySchedule from './CopySchedule'
-import { createRotaPdf } from '../lib/rotaPdf'
 import PublicationPanel, { type PublicationPreview } from './PublicationPanel'
 import AgendaView from './AgendaView'
 import AbsenceCalendar from './AbsenceCalendar'
@@ -43,9 +42,10 @@ export default function CalendarPanel({suggestionContext,onSuggestionSaved,onCon
  const assignmentsByPersonDate=useMemo(()=>{const map=new Map<string,Assignment[]>();for(const assignment of assignments){if(!assignment.work_date.startsWith(key))continue;const lookup=`${assignment.professional_id}|${assignment.work_date}`;const rows=map.get(lookup);if(rows)rows.push(assignment);else map.set(lookup,[assignment])}return map},[assignments,key])
  const selectDate=(date:string)=>{setAgendaDate(date);setMonth(startOfMonth(parseISO(date)))}
  const moveMonth=(offset:number)=>selectDate(format(addMonths(month,offset),'yyyy-MM-01'))
- const exportPdf=()=>{
+ const exportPdf=async()=>{
   setPdfBusy(true);setPdfMessage('');setPdfFile(null)
   try {
+   const { createRotaPdf } = await import('../lib/rotaPdf')
    const selected=visibleStaff
    const pdf=createRotaPdf(key,selected,assignments,consultations,syncedAt,isSupervisor?'BORRADOR · Pendiente de publicación':'PUBLICADO')
    const file={url:URL.createObjectURL(pdf.output('blob')),name:`EndoTurnos_${key}_${selected.length===1?'individual':'equipo'}.pdf`}
