@@ -3,6 +3,7 @@ import { addDays,endOfMonth,format,parseISO,startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { Assignment,Consultation,Staff } from '../types'
 import { getPlanning } from './planningConfig'
+import { absenceAppearance, isAbsence } from './absences'
 
 type ShiftBand = 'morning' | 'afternoon'
 
@@ -89,21 +90,25 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
     const x=margin+nameWidth+i*cellWidth
     const weekend=[0,6].includes(parseISO(date).getDay())
     const holiday=Boolean(getPlanning().holidays[date])
-    doc.setFillColor(holiday?'#fae8e0':weekend?'#f2f3ef':'#ffffff')
-    doc.rect(x,y,cellWidth,rowHeight,'FD')
     const items=assignments.filter(a=>a.work_date===date&&a.professional_id===person.id&&isInBand(a,band))
+    const special=items.find(a=>isAbsence(a.consultation_id))
+    const specialVisual=special?absenceAppearance(special.consultation_id):null
+    doc.setFillColor(specialVisual?.shade??(holiday?'#fae8e0':weekend?'#f2f3ef':'#ffffff'))
+    doc.rect(x,y,cellWidth,rowHeight,'FD')
     if(!items.length)return
     const gap=.35
     const badgeHeight=Math.max(2.2,Math.min(4.6,(rowHeight-gap*(items.length+1))/items.length))
     items.forEach((a,j)=>{
      const c=consultations.find(c=>c.id===a.consultation_id)
+     const visual=isAbsence(a.consultation_id)?absenceAppearance(a.consultation_id):null
+     if(visual?.className==='rest')return
      const top=y+gap+j*(badgeHeight+gap)
      if(top+badgeHeight>y+rowHeight-.2)return
-     doc.setFillColor(c?.color??'#50755a')
+     doc.setFillColor(visual?.color??c?.color??'#50755a')
      doc.roundedRect(x+.45,top,cellWidth-.9,badgeHeight,.6,.6,'F')
      doc.setTextColor('#ffffff');doc.setFont('helvetica','bold')
      doc.setFontSize(Math.max(3.8,Math.min(6.6,badgeHeight*1.35)))
-     doc.text((c?.short_label??a.consultation_id.slice(0,5))+(a.is_extra?'*':''),x+cellWidth/2,top+badgeHeight*.7,{align:'center',maxWidth:cellWidth-1.2})
+     doc.text((visual?.symbol??c?.short_label??a.consultation_id.slice(0,5))+(a.is_extra?'*':''),x+cellWidth/2,top+badgeHeight*.7,{align:'center',maxWidth:cellWidth-1.2})
     })
    })
    y+=rowHeight
@@ -115,7 +120,7 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
   doc.setTextColor('#365340');doc.setFont('helvetica','bold');doc.setFontSize(8.5)
   doc.text('Leyenda',margin,y+4)
   const colWidth=tableWidth/legendColumns
-  consultations.forEach((c,index)=>{
+  consultations.filter(c=>!isAbsence(c.id)).forEach((c,index)=>{
    const col=index%legendColumns
    const row=Math.floor(index/legendColumns)
    const x=margin+col*colWidth
@@ -126,9 +131,12 @@ export function createRotaPdf(month:string,staff:Staff[],assignments:Assignment[
    doc.setFont('helvetica','normal');doc.setFontSize(6.2);doc.setTextColor('#607166')
    doc.text(c.label,x+18,lineY-.4,{maxWidth:colWidth-20})
   })
-  const noteY=y+9+legendRows*6
+  const specialY=y+9+Math.ceil(consultations.filter(c=>!isAbsence(c.id)).length/legendColumns)*6
+  const specials=[['VAC','Vacaciones'],['PER','Permiso'],['FOR','Formación'],['','Descanso']]
+  specials.forEach((item,index)=>{const visual=absenceAppearance(index===0?'VAC':index===1?'PERM':index===2?'FOR':'DESCANSO');const x=margin+index*colWidth;doc.setFillColor(visual.shade);doc.roundedRect(x,specialY-3.1,5,3.5,.7,.7,'F');doc.setTextColor('#355043');doc.setFont('helvetica','bold');doc.setFontSize(6.3);doc.text(item[0]||'—',x+7,specialY-.4);doc.setFont('helvetica','normal');doc.text(item[1],x+18,specialY-.4)})
+  const noteY=specialY+6
   doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor('#647368')
-  doc.text('Fondo salmón: festivo · Celdas vacías: sin asignación · * Consulta extra · Las asignaciones provisionales deben revisarse en EndoTurnos.',margin,noteY)
+  doc.text('Sombreado verde: VAC · malva: PER · naranja: FOR · gris: descanso · Fondo salmón: festivo · * Consulta extra.',margin,noteY)
  }
 
  const footer=()=>{
