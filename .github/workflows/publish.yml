@@ -20,6 +20,13 @@ jobs:
       - name: Checkout web repository
         uses: actions/checkout@v4
 
+      - name: Refresh high-resolution mascot assets
+        run: |
+          curl --fail --location 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/aa41989f-0cbf-494d-b108-7fd906468965.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiMTAzNDIxYWFkNzM4NzQ5OCIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDg1MDM0Nn0.hgpVysS8cjXRoJ-cP_gyBsIgC2d_7aE2pnIugYfX5GM' -o mascots/cat.png
+          curl --fail --location 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/daf5bf23-1de4-4ed6-9763-d1e59cc7b9bd.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiOGZkYzY5YTc0MjBjOWJlOSIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDgxNTY1NX0.7er3PUJlDi_iHbXOMvM9R20n5oGyzXPA3RhRC2z1zug' -o mascots/yogurt.png
+          curl --fail --location 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/395b9d81-1d36-492c-877c-4d342500bbac.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiMzg2MmYzYjZmOGFkODAzZCIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDgyODIxNH0.b2TjUScoMjlYeyKnnrNc_bSLBmjdt6oTmcF729SSciE' -o mascots/toast.png
+          curl --fail --location 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/8983ae4a-e2da-42c5-bdd6-d818841e220a.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiNWQyZjg2N2VkNGI5MWU2MiIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDgwMDUxMH0.qFqXPjq3HdaL9B2wG4xR7yNrlw652AckzigzxhTobpg' -o mascots/avocado.png
+
       - name: Prepare public assets
         run: |
           mkdir -p source/public
@@ -50,7 +57,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A assets index.html .nojekyll
+          git add -A mascots assets index.html .nojekyll
           if git diff --cached --quiet; then
             echo "No publication changes."
           else
