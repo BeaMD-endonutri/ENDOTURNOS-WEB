@@ -668,6 +668,8 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
   const [mascot, setMascot] = useState<MascotKey>('apple')
   const [pendingAccounts, setPendingAccounts] = useState<Array<{ user_id: string; email: string; full_name: string | null; username: string | null; created_at: string }>>([])
   const [teamFeedback, setTeamFeedback] = useState('')
+  const [teamMascot, setTeamMascot] = useState<MascotKey>('apple')
+  const [teamMascotBusy, setTeamMascotBusy] = useState(false)
 
   const loadPendingAccounts = useCallback(async () => {
     if (demo || !supabase) return
@@ -749,6 +751,35 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
     setTeamFeedback(person.active ? person.display_name + ' ha quedado fuera del equipo activo.' : person.display_name + ' vuelve a estar activo.')
   }
 
+  const openPerson = (person: Staff) => {
+    setSelectedPerson(person)
+    setTeamMascot(person.mascot_key)
+    setTeamFeedback('')
+  }
+
+  const savePersonMascot = async () => {
+    if (!selectedPerson || teamMascotBusy) return
+    setTeamMascotBusy(true)
+    setTeamFeedback('')
+    if (demo) {
+      onChange(rows => rows.map(row => row.id === selectedPerson.id ? { ...row, mascot_key: teamMascot } : row))
+      setSelectedPerson(person => person ? { ...person, mascot_key: teamMascot } : person)
+      setTeamFeedback('Mascota actualizada para ' + selectedPerson.display_name + '.')
+      setTeamMascotBusy(false)
+      return
+    }
+    const { error } = await supabase!.rpc('et_set_staff_mascot', { p_staff_id: selectedPerson.id, p_mascot: teamMascot })
+    if (error) {
+      setTeamFeedback(error.message)
+      setTeamMascotBusy(false)
+      return
+    }
+    await reload()
+    setSelectedPerson(person => person ? { ...person, mascot_key: teamMascot } : person)
+    setTeamFeedback('Mascota actualizada para ' + selectedPerson.display_name + '.')
+    setTeamMascotBusy(false)
+  }
+
   return <section className="content-section">
     <div className="section-heading"><div><span className="eyebrow">Administración</span><h1>Equipo</h1><p>Vincula las cuentas registradas con su ficha, edita coberturas y gestiona quién forma parte del equipo.</p></div></div>
     {teamFeedback && <p className="form-message">{teamFeedback}</p>}
@@ -780,14 +811,14 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
         <p>@{s.username}</p>
         <span>{s.role === 'supervisor' ? 'Supervisora' : 'Enfermera/o'} · {s.user_id ? 'Acceso activo' : 'Sin cuenta vinculada'}{!s.active ? ' · Baja del equipo' : ''}</span>
         <div className="inline-actions">
-          {s.role === 'professional' && <button className="soft-button" onClick={() => setSelectedPerson(s)}>Ver ficha personal</button>}
+          <button className="soft-button" onClick={() => openPerson(s)}>Ver ficha personal</button>
           {!s.user_id && s.role !== 'supervisor' && <button className="icon-action delete" title="Eliminar perfil" onClick={() => void removePerson(s)}><Trash2 size={15} /> Eliminar</button>}
           {s.role !== 'supervisor' && <button className="icon-action edit" title={s.active ? 'Desactivar perfil' : 'Reactivar perfil'} onClick={() => void toggleActive(s)}>{s.active ? 'Desactivar' : 'Reactivar'}</button>}
         </div>
       </div>
     </article>)}</div>
 
-    {selectedPerson && <div className="modal-backdrop"><div className="modal wide-modal" role="dialog" aria-modal="true" aria-label="Ficha de profesional"><button className="modal-close" aria-label="Cerrar ficha" onClick={() => setSelectedPerson(null)}><X /></button><h2>{selectedPerson.display_name}</h2><CoveragePreferences key={selectedPerson.id} person={selectedPerson} consultations={consultations.filter(c=>!isAbsence(c.id))} profile={coverageProfiles.find(p => p.staff_id === selectedPerson.id)} demo={demo} onChange={onCoverageChange} reload={reload} /></div></div>}
+    {selectedPerson && <div className="modal-backdrop"><div className="modal wide-modal" role="dialog" aria-modal="true" aria-label="Ficha de profesional"><button className="modal-close" aria-label="Cerrar ficha" onClick={() => setSelectedPerson(null)}><X /></button><span className="eyebrow">{selectedPerson.role==='supervisor'?'Supervisión':'Ficha profesional'}</span><h2>{selectedPerson.display_name}</h2><section className="team-mascot-editor"><div><strong>Mascota del perfil</strong><p className="helper">Como supervisora puedes cambiarla cuando quieras. La persona también podrá volver a elegir otra desde su propia ficha.</p></div><div className="profile-preview compact-team-mascot"><img src={(MASCOTS.find(m=>m.key===teamMascot)??MASCOTS[0]).src} alt={(MASCOTS.find(m=>m.key===teamMascot)??MASCOTS[0]).name}/></div><MascotPicker value={teamMascot} onChange={setTeamMascot} compact/><button className="primary" disabled={teamMascotBusy||teamMascot===selectedPerson.mascot_key} onClick={()=>void savePersonMascot()}>{teamMascotBusy?'Guardando…':'Guardar mascota'}</button></section>{selectedPerson.role==='professional'&&<CoveragePreferences key={selectedPerson.id} person={selectedPerson} consultations={consultations.filter(c=>!isAbsence(c.id))} profile={coverageProfiles.find(p => p.staff_id === selectedPerson.id)} demo={demo} onChange={onCoverageChange} reload={reload} />}</div></div>}
 
     <form className="panel add-person" onSubmit={add}>
       <h2><CircleUserRound /> Añadir perfil</h2>
@@ -842,7 +873,7 @@ function ProfileView({ coverageProfile, onCoverageChange, consultations, profile
   const [saved, setSaved] = useState(false)
   const save = async () => {
     if (!demo) {
-      const { error } = await supabase!.from('et_staff').update({ mascot_key: mascot, first_login_completed: true }).eq('id', profile.id)
+      const { error } = await supabase!.rpc('et_set_staff_mascot', { p_staff_id: profile.id, p_mascot: mascot })
       if (error) return
       await reload()
     }
