@@ -1230,3 +1230,30 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 .shift-cell.has-note:after,.agenda-shift.has-note:after{content:"";position:absolute;top:0;right:0;width:0;height:0;border-top:12px solid #d79818;border-left:12px solid transparent;z-index:3}
 .shift-cell.has-note:hover,.agenda-shift.has-note:hover{box-shadow:inset 0 0 0 2px #d79818,0 0 0 2px #fff0b8,0 4px 14px #a9782428}
 @media(max-width:620px){.cadence-until{grid-template-columns:1fr}.clear-month-button,.undo-month-button{width:100%;justify-content:center}}
+
+
+/* Vista mensual de supervisión: mañana y tarde separadas, como en el PDF. */
+.month-matrix.split-shifts{min-width:1080px}
+.matrix-band-corner{position:sticky;top:0;left:132px;z-index:7;background:#f8faf7;border-bottom:1px solid var(--line);border-left:1px solid #e6ebe6;display:grid;place-items:center;padding:6px 2px;font-size:8px;color:#7a887f;text-transform:uppercase;letter-spacing:.06em}
+.split-shifts .day-head{min-height:46px}
+.split-shifts .staff-cell{min-height:70px}
+.split-staff{align-self:stretch;border-bottom:2px solid #dfe7df}
+.split-staff img{width:30px;height:30px}
+.split-staff span{font-size:10px}
+.split-staff small{font-size:7px}
+.shift-band-label{position:sticky;left:132px;z-index:4;display:grid;place-items:center;min-height:35px;border-left:1px solid #e6ebe6;border-bottom:1px solid #edf0ed;font-size:10px;font-weight:900;letter-spacing:.04em}
+.shift-band-label.morning{background:#f5f9f1;color:#4e7457}
+.shift-band-label.afternoon{background:#fff6e9;color:#9a6330;border-bottom:2px solid #dfe7df}
+.split-shifts .shift-cell{min-height:35px;padding:2px 1px;gap:1px}
+.split-shifts .shift-cell.band-afternoon{border-bottom:2px solid #dfe7df}
+.split-shifts .shift-cell span{padding:2px 1px;font-size:7px;border-radius:4px}
+.split-shifts .shift-cell em{font-size:7px}
+.time-band-key{font-weight:750}
+.time-band-key:before{content:"";width:8px;height:8px;border-radius:3px;margin-right:2px}
+.time-band-key.morning:before{background:#dcebd8}
+.time-band-key.afternoon:before{background:#f4dfc3}
+@media(max-width:640px){
+ .month-matrix.split-shifts{min-width:1020px}
+ .matrix-band-corner,.shift-band-label{left:118px}
+ .month-matrix.split-shifts{grid-template-columns:118px 30px repeat(31,minmax(28px,1fr))}
+}
