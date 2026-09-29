@@ -7,6 +7,7 @@ on:
       - ".github/workflows/publish.yml"
       - "source/src/**"
       - "source/.env.production"
+      - "mascots/**"
   workflow_dispatch:
 
 permissions:
