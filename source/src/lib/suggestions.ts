@@ -17,13 +17,14 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  const from=month+'-01',until=format(endOfMonth(parseISO(from)),'yyyy-MM-dd')
  const warnings:string[]=[];const proposed:SuggestedShift[]=[];const working=[...assignments]
  if(from<planning.start_date||until>planning.end_date)return {proposed,warnings:['Amplía el periodo en Configuración antes de sugerir este mes.'],issues:[]}
- const configured=consultations.filter(c=>{if(!c.active||isAbsence(c.id))return false;if(!c.preferred_staff_id){warnings.push(`${c.label}: falta el profesional preferente.`);return false}return true})
+ const configured=consultations.filter(c=>c.active&&!isAbsence(c.id))
  for(const p of staff.filter(p=>p.active&&p.role==='professional')){const profile=profiles.find(x=>x.staff_id===p.id);if(!profile?.consultation_ids.length||!profile.work_cadences?.length)warnings.push(`${p.display_name}: ficha de consultas o cadencias pendiente; no se propondrá.`)}
  type Slot={c:Consultation;r:CoverageRule;dates:string[];target:number}
  const slots:Slot[]=[]
  for(const c of configured){
   let open=false
   for(const r of c.coverage_rules??defaultCoverageRules(c.id)){
+   const preferred=r.preferred_staff_ids??(c.preferred_staff_id?[c.preferred_staff_id]:[]);if(!preferred.length)warnings.push(`${c.label}: una regla no tiene profesional habitual; se usarán profesionales compatibles.`)
    const dates:string[]=[]
    for(let d=parseISO(from);format(d,'yyyy-MM-dd')<=until;d=addDays(d,1)){
     const date=format(d,'yyyy-MM-dd');if(copyRuleCheck(c,date,r.start_time,r.end_time,consultations,planning).blocked.length||planning.holidays[date]||date<r.valid_from||date>r.valid_until||!r.weekdays.includes(getDay(d))||r.suspensions.some(s=>date>=s.from&&date<=s.to)||(!r.monthly&&differenceInCalendarWeeks(d,parseISO(r.anchor_date),{weekStartsOn:1})%r.every_weeks!==0))continue
@@ -36,7 +37,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   if(!open)warnings.push(`${c.label}: sin franjas abiertas este mes; revisa la vigencia y las suspensiones.`)
  }
  const coverage=(s:Slot,date:string)=>minimumCoverage(workingIntervals(working).filter(a=>[s.c.id,...(s.r.alternatives??[])].includes(a.consultation_id)&&a.work_date===date&&!hasAbsence(a.professional_id,date,requests)),s.r.start_time,s.r.end_time)
- const available=(s:Slot,date:string)=>staff.filter(p=>p.active&&p.role==='professional'&&[s.c.preferred_staff_id,...(s.c.secondary_staff_ids??[])].includes(p.id)).map(person=>({person,profile:profiles.find(p=>p.staff_id===person.id)})).filter(({person,profile})=>profile?.consultation_ids.includes(s.c.id)&&cadenceAllows(profile,date,s.r.start_time,s.r.end_time)&&!assignmentConflicts({professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false},working,requests,consultations).length&&weeklyLoad(person.id,date,working)+duration(s.r)<=person.weekly_minutes).sort((a,b)=>Number(b.person.id===s.c.preferred_staff_id)-Number(a.person.id===s.c.preferred_staff_id)||(a.profile!.consultation_ids.indexOf(s.c.id)-b.profile!.consultation_ids.indexOf(s.c.id))||(weeklyLoad(a.person.id,date,working)/a.person.weekly_minutes-weeklyLoad(b.person.id,date,working)/b.person.weekly_minutes)||a.person.display_name.localeCompare(b.person.display_name,'es'))
+ const available=(s:Slot,date:string)=>{const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const tier=(id:string)=>preferred.includes(id)?0:secondary.includes(id)?1:2;return staff.filter(p=>p.active&&p.role==='professional').map(person=>({person,profile:profiles.find(p=>p.staff_id===person.id)})).filter(({person,profile})=>profile?.consultation_ids.includes(s.c.id)&&cadenceAllows(profile,date,s.r.start_time,s.r.end_time)&&!assignmentConflicts({professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false},working,requests,consultations).length&&weeklyLoad(person.id,date,working)+duration(s.r)<=person.weekly_minutes).sort((a,b)=>tier(a.person.id)-tier(b.person.id)||(a.profile!.consultation_ids.indexOf(s.c.id)-b.profile!.consultation_ids.indexOf(s.c.id))||(weeklyLoad(a.person.id,date,working)/a.person.weekly_minutes-weeklyLoad(b.person.id,date,working)/b.person.weekly_minutes)||a.person.display_name.localeCompare(b.person.display_name,'es'))}
  // Allocate scarce recurring services first, one place per service before filling second places.
  const recurring=slots.filter(s=>!s.r.monthly)
  for(let level=1;level<=Math.max(0,...recurring.map(s=>s.target));level++){
@@ -51,7 +52,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  }
  function fill(s:Slot,date:string,target:number){
   while(coverage(s,date)<target){const candidate=available(s,date)[0];if(!candidate)break
-   const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:candidate.person.id===s.c.preferred_staff_id?'Profesional preferente':'Profesional secundario'}
+   const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const reason=preferred.includes(candidate.person.id)?'Profesional habitual de esta regla':secondary.includes(candidate.person.id)?'Alternativa de esta regla':'Profesional compatible disponible';const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:reason}
    proposed.push(row);working.push(row)
   }
  }

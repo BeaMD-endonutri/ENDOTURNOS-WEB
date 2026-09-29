@@ -1266,3 +1266,11 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 .compact-team-mascot{min-height:120px;padding:10px;display:grid;place-items:center;background:white;border-radius:16px;border:1px solid #e5ebe2}
 .compact-team-mascot img{width:110px;height:110px;object-fit:contain}
 @media(max-width:640px){.compact-team-mascot img{width:90px;height:90px}}
+
+/* Profesionales por regla de cobertura. */
+.coverage-summary{display:grid;gap:3px;margin:5px 0 2px}
+.coverage-summary small{display:block!important;white-space:normal!important;color:#51675b!important}
+.coverage-summary b{display:inline-grid;place-items:center;min-width:22px;height:18px;padding:0 5px;border-radius:6px;background:#e6efe5;color:#376149;font-size:9px;margin-right:4px}
+.rule-staff-block{display:grid;gap:8px;margin:18px 0;padding:14px;border:1px solid #dce6d9;border-radius:14px;background:#fbfcf8}
+.rule-staff-block>strong:not(:first-child){margin-top:9px}
+.rule-readable-summary{margin:12px 0;padding:10px 12px;border-radius:11px;background:#eef5eb;color:#355b43;font-size:12px;line-height:1.5}

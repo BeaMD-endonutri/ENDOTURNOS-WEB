@@ -117,6 +117,8 @@ export interface CoverageRule {
   valid_until: string
   suspensions: { from: string; to: string }[]
   alternatives?: string[]
+  preferred_staff_ids?: string[]
+  secondary_staff_ids?: string[]
 }
 export interface AssignmentHistory {
   id: string
