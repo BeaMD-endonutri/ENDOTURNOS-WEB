@@ -10,6 +10,9 @@ export const MASCOTS: Array<{ key: MascotKey; name: string; src: string; greetin
   { key: 'glucometer', name: 'Glucómetro', src: `${import.meta.env.BASE_URL}mascots/glucometer.png`, greeting: '¡Todo medido y bajo control!' },
   { key: 'pineapple', name: 'Piña', src: `${import.meta.env.BASE_URL}mascots/pineapple.png`, greeting: '¡Ponle alegría a tu turno!' },
   { key: 'dumbbell', name: 'Mancuerna', src: `${import.meta.env.BASE_URL}mascots/dumbbell.png`, greeting: '¡A por un turno fuerte y ligero!' },
+  { key: 'yogurt', name: 'Yogur desnatado', src: `${import.meta.env.BASE_URL}mascots/yogurt.png`, greeting: '¡Un turno ligero y redondo!' },
+  { key: 'toast', name: 'Tostada', src: `${import.meta.env.BASE_URL}mascots/toast.png`, greeting: '¡A por el turno con energía!' },
+  { key: 'avocado', name: 'Aguacate', src: `${import.meta.env.BASE_URL}mascots/avocado.png`, greeting: '¡Hoy lo damos todo!' },
 ]
 
 export const STAFF_IDS = {

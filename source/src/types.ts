@@ -1,5 +1,5 @@
 export type Role = 'supervisor' | 'professional'
-export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell'
+export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell' | 'yogurt' | 'toast' | 'avocado'
 
 export interface Staff {
   id: string
