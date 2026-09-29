@@ -1217,3 +1217,16 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 .agenda-shift.agenda-absence-perm { background:#eadcf080; }
 .agenda-shift.agenda-absence-for { background:#ffe3c780; }
 .agenda-shift.agenda-absence-rest { background:#e3e5e690; }
+
+
+/* Cadencias abiertas y acciones seguras de mes. */
+.cadence-until{display:grid;grid-template-columns:minmax(135px,.9fr) minmax(145px,1.1fr);gap:8px;align-items:center}
+.always-badge{min-height:43px;display:flex;align-items:center;justify-content:center;border:1px solid #b8d1be;background:#edf6ee;color:#245e3f;border-radius:12px;font-size:12px;letter-spacing:.08em}
+.clear-month-button{border:1px solid #e4b4a8;background:#fff2ef!important;color:#9a4435!important}
+.clear-month-button:hover{background:#ffe7e1!important}
+.undo-month-button{border:1px solid #9fc9ad;background:#edf7ef!important;color:#286341!important}
+.month-action-message{margin-top:10px}
+.shift-cell.has-note,.agenda-shift.has-note{position:relative;box-shadow:inset 0 0 0 2px #e8b84d,0 0 0 1px #fff6d8}
+.shift-cell.has-note:after,.agenda-shift.has-note:after{content:"";position:absolute;top:0;right:0;width:0;height:0;border-top:12px solid #d79818;border-left:12px solid transparent;z-index:3}
+.shift-cell.has-note:hover,.agenda-shift.has-note:hover{box-shadow:inset 0 0 0 2px #d79818,0 0 0 2px #fff0b8,0 4px 14px #a9782428}
+@media(max-width:620px){.cadence-until{grid-template-columns:1fr}.clear-month-button,.undo-month-button{width:100%;justify-content:center}}
