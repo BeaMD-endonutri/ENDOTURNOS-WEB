@@ -95,7 +95,7 @@ textarea { min-height: 100px; resize: vertical; }
 .avatar-button img { width: 36px; height: 36px; object-fit: contain; }
 .welcome-card { margin: 24px 30px 0; min-height: 118px; padding: 18px 24px 18px 145px; background: linear-gradient(100deg, #dceade, #eef3dc); border: 1px solid #ceddce; border-radius: 22px; display: flex; align-items: center; position: relative; overflow: hidden; }
 .welcome-card::after { content: ''; position: absolute; width: 250px; height: 250px; border-radius: 50%; border: 1px solid #789c7930; right: -70px; top: -140px; }
-.welcome-card > img { position: absolute; width: 135px; height: 135px; object-fit: contain; left: 12px; bottom: -18px; filter: drop-shadow(0 10px 10px #315f4540); }
+.welcome-card > img { position: absolute; width: 118px; height: 118px; object-fit: contain; image-rendering: auto; left: 18px; bottom: -10px; filter: drop-shadow(0 10px 10px #315f4540); }
 .welcome-card span { color: var(--green); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .welcome-card h2 { font: 650 28px Fraunces, serif; margin: 3px 0 4px; }
 .welcome-card p { margin: 0; color: #536c5e; }
@@ -238,7 +238,7 @@ textarea { min-height: 100px; resize: vertical; }
 .consultation-summary small { color: #718078; font-size: 10px; }
 .profile-layout { display: grid; grid-template-columns: minmax(250px, .65fr) minmax(390px, 1.35fr); gap: 18px; align-items: start; }
 .profile-preview { text-align: center; background: linear-gradient(160deg, #e4efe2, #fffdf7); }
-.profile-preview > img { width: min(128px, 55%); aspect-ratio: 1; object-fit: contain; image-rendering: auto; filter: drop-shadow(0 14px 16px #244f3730); }
+.profile-preview > img { width: min(112px, 50%); aspect-ratio: 1; object-fit: contain; image-rendering: auto; filter: drop-shadow(0 14px 16px #244f3730); }
 .profile-preview > span { display: block; color: var(--green); font-weight: 700; font-size: 12px; margin: 6px 0 12px; }
 .profile-preview h2 { margin-bottom: 4px; }.profile-preview p { color: #708078; }
 

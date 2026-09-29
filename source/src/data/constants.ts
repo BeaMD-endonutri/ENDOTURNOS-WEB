@@ -5,14 +5,14 @@ export const MASCOTS: Array<{ key: MascotKey; name: string; src: string; greetin
   { key: 'flame', name: 'Llamita', src: `${import.meta.env.BASE_URL}mascots/flame.png`, greeting: '¡Hoy vienes con chispa!' },
   { key: 'puffin', name: 'Puffin', src: `${import.meta.env.BASE_URL}mascots/puffin.png`, greeting: 'Tu día está bajo control.' },
   { key: 'worm', name: 'Gusanito', src: `${import.meta.env.BASE_URL}mascots/worm.png`, greeting: 'Pasito a pasito, todo sale.' },
-  { key: 'cat', name: 'Gatita', src: `${import.meta.env.BASE_URL}mascots/cat.png?v=3`, greeting: '¡Que tengas un turno estupendo!' },
+  { key: 'cat', name: 'Gatita', src: `${import.meta.env.BASE_URL}mascots/cat.png?v=4`, greeting: '¡Que tengas un turno estupendo!' },
   { key: 'llama', name: 'Llama', src: `${import.meta.env.BASE_URL}mascots/llama.png`, greeting: '¡Hoy avanzamos con calma y alegría!' },
   { key: 'glucometer', name: 'Glucómetro', src: `${import.meta.env.BASE_URL}mascots/glucometer.png`, greeting: '¡Todo medido y bajo control!' },
   { key: 'pineapple', name: 'Piña', src: `${import.meta.env.BASE_URL}mascots/pineapple.png`, greeting: '¡Ponle alegría a tu turno!' },
   { key: 'dumbbell', name: 'Mancuerna', src: `${import.meta.env.BASE_URL}mascots/dumbbell.png`, greeting: '¡A por un turno fuerte y ligero!' },
-  { key: 'yogurt', name: 'Yogur desnatado', src: `${import.meta.env.BASE_URL}mascots/yogurt.png?v=3`, greeting: '¡Un turno ligero y redondo!' },
-  { key: 'toast', name: 'Tostada', src: `${import.meta.env.BASE_URL}mascots/toast.png?v=3`, greeting: '¡A por el turno con energía!' },
-  { key: 'avocado', name: 'Aguacate', src: `${import.meta.env.BASE_URL}mascots/avocado.png?v=3`, greeting: '¡Hoy lo damos todo!' },
+  { key: 'yogurt', name: 'Yogur desnatado', src: `${import.meta.env.BASE_URL}mascots/yogurt.png?v=4`, greeting: '¡Un turno ligero y redondo!' },
+  { key: 'toast', name: 'Tostada', src: `${import.meta.env.BASE_URL}mascots/toast.png?v=4`, greeting: '¡A por el turno con energía!' },
+  { key: 'avocado', name: 'Aguacate', src: `${import.meta.env.BASE_URL}mascots/avocado.png?v=4`, greeting: '¡Hoy lo damos todo!' },
 ]
 
 export const STAFF_IDS = {
