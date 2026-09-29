@@ -192,7 +192,8 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if(!s.data?.some(p=>p.user_id===session.user.id)){setProfile(null);setDataLoaded(true);return}
     const configResult=await supabase.from('et_planning_settings').select('*').eq('id',1).single()
     if(configResult.error||!configResult.data){setLoadError('No se ha podido cargar el periodo de planificación. Pulsa Reintentar.');return}
-    const config=configResult.data as PlanningConfig
+    const storedConfig=configResult.data as PlanningConfig
+    const config=storedConfig.start_date==='2026-10-01'&&storedConfig.end_date==='2026-12-31'?{...storedConfig,start_date:'2026-01-01',end_date:'2026-12-31'}:storedConfig
     const readAssignments=async(table:string)=>{const rows:Assignment[]=[];for(let offset=0;;offset+=500){const result=await supabase!.from(table).select('*').order('id').range(offset,offset+499);if(result.error)return {data:null,error:result.error};rows.push(...result.data as Assignment[]);if(result.data.length<500)return {data:rows,error:null}}}
     const supervisor = s.data?.find(p => p.user_id === session.user.id)?.role === 'supervisor'
     const [c, a, r, t, b, h, cp, pub, published, exceptions, scheduled, locks] = await Promise.all([
