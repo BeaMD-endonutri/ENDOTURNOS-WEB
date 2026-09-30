@@ -660,6 +660,7 @@ function TasksView({ tasks, profile, demo, focusNonce, onChange, reload }: { tas
   </section>
 }
 
+// Staff categories are persisted per profile for scoped team management.
 function staffCategoryLabel(category?: StaffCategory) {
   return ({ nursing: 'Enfermería', tcae: 'TCAE', administrative: 'Administrativa', endocrinology: 'Endocrino' } as Record<StaffCategory, string>)[category ?? 'nursing']
 }
