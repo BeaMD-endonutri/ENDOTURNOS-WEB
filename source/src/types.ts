@@ -1,4 +1,5 @@
 export type Role = 'supervisor' | 'professional'
+export type StaffCategory = 'nursing' | 'tcae' | 'administrative' | 'endocrinology'
 export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell' | 'yogurt' | 'toast' | 'avocado'
 
 export interface Staff {
@@ -7,6 +8,7 @@ export interface Staff {
   display_name: string
   username: string
   role: Role
+  category?: StaffCategory
   mascot_key: MascotKey
   active: boolean
   weekly_minutes: number
