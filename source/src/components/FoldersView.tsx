@@ -208,8 +208,10 @@ export default function FoldersView({
     }
 
     setMessages(current => [created as FolderMessage, ...current])
+    const { data: pushResult, error: pushError } = await supabase.functions.invoke('et-send-push', { body: { folderMessageId: created.id } })
     resetComposer()
     setBusy(false)
+    if (pushError || pushResult?.error || pushResult?.failed) setError('El mensaje se ha guardado en su carpeta, pero no se ha podido entregar la notificación push.')
   }
 
   return <section className="content-section folders-view">

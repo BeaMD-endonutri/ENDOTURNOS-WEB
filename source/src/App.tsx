@@ -164,7 +164,7 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const [tasks, setTasks] = useState<PersonalTask[]>([])
   const [broadcasts, setBroadcasts] = useState<TeamBroadcast[]>([])
   const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([])
-  const [view, setView] = useState<View>(() => new URLSearchParams(window.location.search).has('avisos') ? 'broadcasts' : 'home')
+  const [view, setView] = useState<View>(() => { const params=new URLSearchParams(window.location.search); return params.has('carpeta')?'folders':params.has('avisos')?'broadcasts':'home' })
   const navigate = useCallback((next: View) => {
     setView(next)
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -353,10 +353,9 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   }
   const publishRota = async (month:string, preview:PublicationPreview):Promise<string|null> => {
     if(demo){setPublishedAssignments(rows=>[...rows.filter(a=>!a.work_date.startsWith(month)),...assignments.filter(a=>a.work_date.startsWith(month))]);setPublications(rows=>[...rows.filter(p=>p.month!==month+'-01'),{month:month+'-01',published_at:new Date().toISOString(),version:(rows.find(p=>p.month===month+'-01')?.version??0)+1,initial_snapshot:false}]);return null}
-    const {data,error}=await supabase!.rpc('et_publish_rota',{p_month:month+'-01',p_fingerprint:preview.fingerprint})
+    const {error}=await supabase!.rpc('et_publish_rota',{p_month:month+'-01',p_fingerprint:preview.fingerprint})
     if(error)throw new Error(error.message)
     await loadData()
-    if(data?.broadcast_id){try {const {data:push,error:pushError}=await supabase!.functions.invoke('et-send-push',{body:{broadcastId:data.broadcast_id}});if(pushError||push?.error||push?.failed)return 'Cuadrante publicado y aviso guardado. Algunas notificaciones push no se han podido entregar.'} catch {return 'Cuadrante publicado y aviso guardado. No se ha podido confirmar la entrega de las notificaciones push.'}}
     return null
   }
   const saveCoverageException=async(issue:CoverageIssue,reason:string):Promise<string|null>=>{
