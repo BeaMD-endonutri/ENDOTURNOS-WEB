@@ -300,6 +300,8 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
   const addHistory = (before: Assignment | null, after: Assignment | null) => setHistory(rows => [{id:crypto.randomUUID(), assignment_id:(after??before)!.id,action:!before?'INSERT':!after?'DELETE':'UPDATE',actor_name:activeProfile.display_name,changed_at:new Date().toISOString(),before_data:before,after_data:after},...rows])
   const saveAssignment = async (next: AssignmentDraft|AssignmentDraft[]): Promise<string | null> => {
     const rows=Array.isArray(next)?next:[next]
+    const blockedRow=rows.find(item=>lockedMonths.some(m=>m.month===item.work_date.slice(0,7)+'-01'))
+    if(blockedRow)return `El mes ${blockedRow.work_date.slice(0,7)} está bloqueado permanentemente. La recurrencia no ha realizado cambios.`
     if (demo) {
       setAssignments(prev=>{
         let out=[...prev]

@@ -2,7 +2,7 @@ import { isAbsence } from '../lib/absences'
 import { usePlanning } from '../lib/planningConfig'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { addDays, format, parseISO } from 'date-fns'
+import { addDays, addMonths, differenceInCalendarWeeks, format, getDay, parseISO, startOfWeek } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { Assignment, CoverageProfile, Consultation, ShiftRequest, Staff } from '../types'
 import { findCoverageCandidates } from '../lib/planning'
@@ -19,6 +19,9 @@ export default function ShiftEditor({selection,staff,assignments,requests,consul
  const canEdit=editable&&(!selection.assignmentId||Boolean(selectedAssignment))
  const [draft,setDraft]=useState<AssignmentDraft>(()=>selectedAssignment?{...selectedAssignment,start_time:selectedAssignment.start_time.slice(0,5),end_time:selectedAssignment.end_time.slice(0,5),override_reason:''}:blank())
  const [periodEnd,setPeriodEnd]=useState(selection.date)
+ const [absenceMode,setAbsenceMode]=useState<'period'|'repeat'>('period')
+ const [repeatEveryWeeks,setRepeatEveryWeeks]=useState(2)
+ const [repeatWeekdays,setRepeatWeekdays]=useState<number[]>([getDay(parseISO(selection.date))])
  const [message,setMessage]=useState('')
  const [busy,setBusy]=useState(false)
  const [confirmed,setConfirmed]=useState(false)
@@ -29,28 +32,49 @@ export default function ShiftEditor({selection,staff,assignments,requests,consul
  const heading=useRef<HTMLHeadingElement>(null)
  useEffect(()=>{heading.current?.focus();const key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!saving.current)onClose()};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[])
  const absence=isAbsence(draft.consultation_id)
+ const recurringTraining=draft.consultation_id==='FOR'&&!draft.id&&absenceMode==='repeat'
  const conflicts=assignmentConflicts(draft,assignments,requests,consultations)
  const items=assignments.filter(a=>selection.assignmentId?a.id===selection.assignmentId:a.work_date===selection.date&&(!selection.personId||a.professional_id===selection.personId)&&(!selection.consultationId||a.consultation_id===selection.consultationId))
  const patch=(p:Partial<AssignmentDraft>)=>{setDraft(d=>({...d,...p}));setConfirmed(false);setCoverageReviewed(false);setMessage('')}
  const edit=(a:Assignment)=>{setDraft({...a,start_time:a.start_time.slice(0,5),end_time:a.end_time.slice(0,5),override_reason:''});setConfirmed(false);setCoverageReviewed(false);setMessage('')}
  const save=async(e:React.FormEvent)=>{
   e.preventDefault();if(busy||saving.current||!canEdit)return
-  if(draft.work_date>ROTA_END){setMessage('Selecciona un día del periodo disponible.');return}
-  if(absence&&!draft.id&&(periodEnd<draft.work_date||periodEnd>ROTA_END)){setMessage('La fecha final debe ser igual o posterior a la inicial y estar dentro del periodo disponible.');return}
+  if(draft.work_date>ROTA_END&&!recurringTraining){setMessage('Selecciona un día del periodo disponible.');return}
+  if(absence&&!draft.id&&periodEnd<draft.work_date){setMessage('La fecha final debe ser igual o posterior a la inicial.');return}
+  if(absence&&!draft.id&&!recurringTraining&&periodEnd>ROTA_END){setMessage('Para un periodo continuo, la fecha final debe estar dentro del periodo disponible.');return}
+  if(recurringTraining&&!repeatWeekdays.length){setMessage('Selecciona al menos un día de la semana para repetir la formación.');return}
   if(draft.end_time<=draft.start_time){setMessage('La hora final debe ser posterior a la inicial.');return}
   if(conflicts.length&&(!confirmed||(draft.override_reason?.trim().length??0)<5)){setMessage('Revisa el conflicto y justifica la excepción antes de guardar.');return}
   saving.current=true;setBusy(true)
   try {
    const base={...draft,override_reason:conflicts.length?draft.override_reason:null}
    let payload:AssignmentDraft|AssignmentDraft[]=base
-   if(absence&&!draft.id&&periodEnd>draft.work_date){
+   let skippedDuplicates=0
+   if(recurringTraining){
+    const rows:AssignmentDraft[]=[]
+    const anchor=startOfWeek(parseISO(draft.work_date),{weekStartsOn:1})
+    for(let d=parseISO(draft.work_date);format(d,'yyyy-MM-dd')<=periodEnd;d=addDays(d,1)){
+     const iso=format(d,'yyyy-MM-dd')
+     const activeWeek=differenceInCalendarWeeks(startOfWeek(d,{weekStartsOn:1}),anchor,{weekStartsOn:1})%repeatEveryWeeks===0
+     if(!activeWeek||!repeatWeekdays.includes(getDay(d)))continue
+     const duplicate=assignments.some(a=>a.professional_id===base.professional_id&&a.work_date===iso&&a.consultation_id==='FOR')
+     if(duplicate){skippedDuplicates++;continue}
+     const row={...base,work_date:iso}
+     if(assignmentConflicts(row,assignments,requests,consultations).length){setMessage(`No se ha guardado la recurrencia porque hay una asignación incompatible el ${format(d,"d 'de' MMMM 'de' yyyy",{locale:es})}. Revisa esa fecha y vuelve a intentarlo.`);return}
+     rows.push(row)
+    }
+    if(!rows.length){setMessage(skippedDuplicates?'Todas las fechas generadas ya tenían formación asignada.':'La recurrencia no genera ninguna fecha con la configuración elegida.');return}
+    payload=rows
+   } else if(absence&&!draft.id&&periodEnd>draft.work_date){
     const rows:AssignmentDraft[]=[]
     for(let d=parseISO(draft.work_date);format(d,'yyyy-MM-dd')<=periodEnd;d=addDays(d,1))rows.push({...base,work_date:format(d,'yyyy-MM-dd')})
     payload=rows
    }
    const error=await onSave(payload);if(error){setMessage(error);return}if(selection.assignmentId){onClose();return}
    const count=Array.isArray(payload)?payload.length:1
-   setDraft(blank());setPeriodEnd(selection.date);setConfirmed(false);setCoverageReviewed(false);setMessage(absence&&count>1?`Periodo guardado: ${count} días añadidos al cuadrante.`:'Asignación guardada. El cuadrante y la cobertura se han actualizado.')
+   setDraft(blank());setPeriodEnd(selection.date);setAbsenceMode('period');setRepeatEveryWeeks(2);setRepeatWeekdays([getDay(parseISO(selection.date))]);setConfirmed(false);setCoverageReviewed(false)
+   if(recurringTraining)setMessage(`Formación recurrente guardada: ${count} días añadidos${skippedDuplicates?` y ${skippedDuplicates} ya existentes omitidos`:''}.`)
+   else setMessage(absence&&count>1?`Periodo guardado: ${count} días añadidos al cuadrante.`:'Asignación guardada. El cuadrante y la cobertura se han actualizado.')
   }
   catch{setMessage('No se ha podido confirmar el guardado. Actualiza el cuadrante antes de intentarlo de nuevo.')}
   finally{saving.current=false;setBusy(false)}
@@ -83,7 +107,7 @@ export default function ShiftEditor({selection,staff,assignments,requests,consul
  {locked&&<p className="form-message" role="status">Este mes está bloqueado permanentemente por supervisión. Puedes consultar los turnos, pero no modificarlos.</p>}
  {message&&<p className="form-message" role="status">{message}</p>}
  {canEdit&&!absence&&<div className="candidate-picker"><button type="button" className="soft-button" disabled={busy} aria-expanded={showCandidates} onClick={()=>setShowCandidates(!showCandidates)}>{showCandidates?'Ocultar coberturas':'Buscar quién puede cubrir'}</button>{showCandidates&&<CoverageSuggestions draft={draft} staff={staff} profiles={coverageProfiles} assignments={assignments} requests={requests} consultations={consultations} busy={busy} reviewed={coverageReviewed} onReview={setCoverageReviewed} onAssign={id=>void assignCandidate(id)} onAdjust={()=>{form.current?.scrollIntoView({behavior:'smooth',block:'start'});form.current?.querySelector<HTMLInputElement>('input[type="date"]')?.focus({preventScroll:true})}}/>}</div>}
- {canEdit&&<form ref={form} className="compact-form" onSubmit={save}><h3>{draft.id?'Editar asignación':'Asignar profesional'}</h3><div className="form-grid"><label>Profesional<select required value={draft.professional_id} onChange={e=>patch({professional_id:e.target.value})}><option value="">Selecciona una persona</option>{professionals.map(p=>{const busy=assignmentConflicts({...draft,professional_id:p.id},assignments,requests,consultations).length>0;return <option key={p.id} value={p.id}>{p.display_name}{busy?' · Revisar disponibilidad':''}</option>})}</select></label><label>Turno o ausencia<select value={draft.consultation_id} onChange={e=>{const c=consultations.find(c=>c.id===e.target.value)!;patch({consultation_id:c.id,start_time:c.default_start_time?.slice(0,5)??'08:00',end_time:c.default_end_time?.slice(0,5)??'15:00',is_extra:isAbsence(c.id)?false:draft.is_extra})}}>{consultations.map(c=><option key={c.id} value={c.id}>{c.label}{isAbsence(c.id)?` (${c.short_label})`:""}</option>)}</select></label><label>{absence&&!draft.id?'Fecha inicial':'Día'}<input required type="date" max={ROTA_END} value={draft.work_date} onChange={e=>{patch({work_date:e.target.value});if(periodEnd<e.target.value)setPeriodEnd(e.target.value)}}/></label>{absence&&!draft.id&&<label>Fecha final<input required type="date" min={draft.work_date} max={ROTA_END} value={periodEnd} onChange={e=>setPeriodEnd(e.target.value)}/><small>Se añadirá automáticamente cada día del periodo.</small></label>}<label>Hora desde<input required type="time" value={draft.start_time} onChange={e=>patch({start_time:e.target.value})}/></label><label>Hora hasta<input required type="time" value={draft.end_time} onChange={e=>patch({end_time:e.target.value})}/></label></div>{!absence&&<label className="checkbox-label extra-shift-check"><input type="checkbox" checked={Boolean(draft.is_extra)} onChange={e=>patch({is_extra:e.target.checked})}/> Consulta extra <small>No cambia la cadencia habitual; se identificará con * en el cuadrante.</small></label>}<label className="checkbox-label"><input type="checkbox" checked={draft.provisional} onChange={e=>patch({provisional:e.target.checked})}/> Provisional</label><label>Notas opcionales<input maxLength={1000} value={draft.notes??''} onChange={e=>patch({notes:e.target.value})}/></label>
+ {canEdit&&<form ref={form} className="compact-form" onSubmit={save}><h3>{draft.id?'Editar asignación':'Asignar profesional'}</h3><div className="form-grid"><label>Profesional<select required value={draft.professional_id} onChange={e=>patch({professional_id:e.target.value})}><option value="">Selecciona una persona</option>{professionals.map(p=>{const busy=assignmentConflicts({...draft,professional_id:p.id},assignments,requests,consultations).length>0;return <option key={p.id} value={p.id}>{p.display_name}{busy?' · Revisar disponibilidad':''}</option>})}</select></label><label>Turno o ausencia<select value={draft.consultation_id} onChange={e=>{const c=consultations.find(c=>c.id===e.target.value)!;patch({consultation_id:c.id,start_time:c.default_start_time?.slice(0,5)??'08:00',end_time:c.default_end_time?.slice(0,5)??'15:00',is_extra:isAbsence(c.id)?false:draft.is_extra});setAbsenceMode(c.id==='FOR'?'repeat':'period');setRepeatEveryWeeks(2);setRepeatWeekdays([getDay(parseISO(draft.work_date))])}}>{consultations.map(c=><option key={c.id} value={c.id}>{c.label}{isAbsence(c.id)?` (${c.short_label})`:""}</option>)}</select></label><label>{absence&&!draft.id?'Fecha inicial':'Día'}<input required type="date" max={recurringTraining?undefined:ROTA_END} value={draft.work_date} onChange={e=>{patch({work_date:e.target.value});if(periodEnd<e.target.value)setPeriodEnd(e.target.value);if(draft.consultation_id==='FOR'&&!draft.id)setRepeatWeekdays([getDay(parseISO(e.target.value))])}}/></label>{absence&&!draft.id&&draft.consultation_id==='FOR'&&<label>Tipo de planificación<select value={absenceMode} onChange={e=>setAbsenceMode(e.target.value as 'period'|'repeat')}><option value="period">Periodo continuo</option><option value="repeat">Cada X semanas</option></select><small>“Cada X semanas” permite, por ejemplo, miércoles y jueves alternos durante varios meses.</small></label>}{absence&&!draft.id&&<label>Fecha final<input required type="date" min={draft.work_date} max={recurringTraining?undefined:ROTA_END} value={periodEnd} onChange={e=>setPeriodEnd(e.target.value)}/><small>{recurringTraining?'Se crearán solo los días seleccionados de las semanas activas.':'Se añadirá automáticamente cada día del periodo.'}</small>{recurringTraining&&<button type="button" className="text-button inline recurrence-quick" onClick={()=>setPeriodEnd(format(addMonths(parseISO(draft.work_date),15),'yyyy-MM-dd'))}>+ 15 meses</button>}</label>}{recurringTraining&&<div className="recurrence-box"><strong>Días que se repiten</strong><div className="weekday-picker">{[1,2,3,4,5,6,0].map(day=><label key={day}><input type="checkbox" checked={repeatWeekdays.includes(day)} onChange={e=>setRepeatWeekdays(current=>e.target.checked?[...current,day]:current.filter(d=>d!==day))}/>{['D','L','M','X','J','V','S'][day]}</label>)}</div><label>Repetir cada<select value={repeatEveryWeeks} onChange={e=>setRepeatEveryWeeks(Number(e.target.value))}>{[1,2,3,4,5,6,7,8].map(n=><option key={n} value={n}>Cada {n} {n===1?'semana':'semanas'}</option>)}</select></label><p className="helper">La semana de la fecha inicial cuenta como la primera semana activa. Ejemplo: X + J, cada 2 semanas.</p></div>}<label>Hora desde<input required type="time" value={draft.start_time} onChange={e=>patch({start_time:e.target.value})}/></label><label>Hora hasta<input required type="time" value={draft.end_time} onChange={e=>patch({end_time:e.target.value})}/></label></div>{!absence&&<label className="checkbox-label extra-shift-check"><input type="checkbox" checked={Boolean(draft.is_extra)} onChange={e=>patch({is_extra:e.target.checked})}/> Consulta extra <small>No cambia la cadencia habitual; se identificará con * en el cuadrante.</small></label>}<label className="checkbox-label"><input type="checkbox" checked={draft.provisional} onChange={e=>patch({provisional:e.target.checked})}/> Provisional</label><label>Notas opcionales<input maxLength={1000} value={draft.notes??''} onChange={e=>patch({notes:e.target.value})}/></label>
  {!!conflicts.length&&<div className="conflict-box" role="alert"><h3><AlertTriangle size={19}/> Revisa antes de guardar</h3>{conflicts.map((c,i)=><p key={i}>{c}</p>)}<label>Motivo de la excepción<textarea required minLength={5} maxLength={500} value={draft.override_reason??''} onChange={e=>setDraft({...draft,override_reason:e.target.value})} placeholder="Explica por qué se mantiene esta asignación…"/></label><label className="checkbox-label"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> He revisado el conflicto y quiero mantener esta excepción.</label></div>}
  <div className="modal-footer">{draft.id&&<button type="button" className="soft-button" onClick={()=>{setDraft(blank());setConfirmed(false);setCoverageReviewed(false);setMessage('')}}>Cancelar edición</button>}<button className="primary" disabled={busy||!draft.professional_id||Boolean(conflicts.length&&(!confirmed||(draft.override_reason?.trim().length??0)<5))}>{busy?'Guardando…':draft.id?<><Check size={17}/> Guardar cambios</>:<><Plus size={17}/> {absence?'Añadir ausencia':'Añadir turno'}</>}</button></div></form>}
  </div></div>

@@ -1274,3 +1274,11 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 .rule-staff-block{display:grid;gap:8px;margin:18px 0;padding:14px;border:1px solid #dce6d9;border-radius:14px;background:#fbfcf8}
 .rule-staff-block>strong:not(:first-child){margin-top:9px}
 .rule-readable-summary{margin:12px 0;padding:10px 12px;border-radius:11px;background:#eef5eb;color:#355b43;font-size:12px;line-height:1.5}
+
+
+/* Formación recurrente cada X semanas. */
+.recurrence-box{grid-column:1/-1;display:grid;gap:10px;padding:14px;border:1px solid #efd2b4;border-radius:14px;background:#fff8f0}
+.recurrence-box>strong{color:#9b5f28}
+.recurrence-box .weekday-picker{margin:0}
+.recurrence-box>label{max-width:250px}
+.recurrence-quick{margin-top:6px;align-self:flex-start}
