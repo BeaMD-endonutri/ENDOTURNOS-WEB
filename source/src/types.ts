@@ -1,6 +1,6 @@
 export type Role = 'supervisor' | 'professional'
 export type StaffCategory = 'nursing' | 'tcae' | 'administrative' | 'endocrinology'
-export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell' | 'yogurt' | 'toast' | 'avocado'
+export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell' | 'yogurt' | 'toast' | 'avocado' | 'egg' | 'turnip' | 'thyroid' | 'broccoli' | 'strawberry' | 'measuring_tape'
 
 export interface Staff {
   id: string
