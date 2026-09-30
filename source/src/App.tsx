@@ -12,7 +12,7 @@ import { buildDemoSchedule } from './data/demoSchedule'
 import { buildCoverageIssues, sameCoverageRule, type CoverageIssue } from './lib/coverage'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { disablePush, enablePush, getPushSubscription, pushAvailable } from './lib/push'
-import type { CoverageException, RotaPublication, LockedMonth, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, TeamBroadcast, ScheduledBroadcast } from './types'
+import type { CoverageException, RotaPublication, LockedMonth, CoverageProfile, AssignmentHistory, Assignment, Consultation, MascotKey, PersonalTask, RequestStatus, RequestType, ShiftRequest, Staff, StaffCategory, TeamBroadcast, ScheduledBroadcast } from './types'
 
 import ConsultationManager from './components/ConsultationManager'
 import SupervisorHome from './components/SupervisorHome'
@@ -660,12 +660,17 @@ function TasksView({ tasks, profile, demo, focusNonce, onChange, reload }: { tas
   </section>
 }
 
+function staffCategoryLabel(category?: StaffCategory) {
+  return ({ nursing: 'Enfermería', tcae: 'TCAE', administrative: 'Administrativa', endocrinology: 'Endocrino' } as Record<StaffCategory, string>)[category ?? 'nursing']
+}
+
 function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, demo, onChange, reload }: { coverageProfiles: CoverageProfile[]; onCoverageChange: React.Dispatch<React.SetStateAction<CoverageProfile[]>>; staff: Staff[]; consultations: Consultation[]; demo: boolean; onChange: React.Dispatch<React.SetStateAction<Staff[]>>; reload: () => void }) {
   const [selectedPerson, setSelectedPerson] = useState<Staff | null>(null)
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Staff['role']>('professional')
+  const [category, setCategory] = useState<StaffCategory>('nursing')
   const [mascot, setMascot] = useState<MascotKey>('apple')
   const [pendingAccounts, setPendingAccounts] = useState<Array<{ user_id: string; email: string; full_name: string | null; username: string | null; created_at: string }>>([])
   const [teamFeedback, setTeamFeedback] = useState('')
@@ -688,7 +693,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
     e.preventDefault()
     setTeamFeedback('')
     const id = crypto.randomUUID()
-    const row = { id, display_name: name.toUpperCase(), username, role, mascot_key: mascot, active: true, weekly_minutes: role === 'supervisor' ? 0 : 2100, user_id: null }
+    const row = { id, display_name: name.toUpperCase(), username, role, category, mascot_key: mascot, active: true, weekly_minutes: role === 'supervisor' ? 0 : 2100, user_id: null }
     if (demo) onChange(p => [...p, row])
     else {
       const { error } = await supabase!.from('et_staff').insert(row)
@@ -704,6 +709,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
     setUsername('')
     setEmail('')
     setRole('professional')
+    setCategory('nursing')
   }
 
   const linkAccount = async (person: Staff, userId: string) => {
@@ -810,7 +816,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
       <div>
         <h3>{s.display_name}</h3>
         <p>@{s.username}</p>
-        <span>{s.role === 'supervisor' ? 'Supervisora' : 'Enfermera/o'} · {s.user_id ? 'Acceso activo' : 'Sin cuenta vinculada'}{!s.active ? ' · Baja del equipo' : ''}</span>
+        <span>{s.role === 'supervisor' ? 'Supervisora' : 'Profesional'} · {staffCategoryLabel(s.category)} · {s.user_id ? 'Acceso activo' : 'Sin cuenta vinculada'}{!s.active ? ' · Baja del equipo' : ''}</span>
         <div className="inline-actions">
           <button className="soft-button" onClick={() => openPerson(s)}>Ver ficha personal</button>
           {!s.user_id && s.role !== 'supervisor' && <button className="icon-action delete" title="Eliminar perfil" onClick={() => void removePerson(s)}><Trash2 size={15} /> Eliminar</button>}
@@ -819,7 +825,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
       </div>
     </article>)}</div>
 
-    {selectedPerson && <div className="modal-backdrop"><div className="modal wide-modal" role="dialog" aria-modal="true" aria-label="Ficha de profesional"><button className="modal-close" aria-label="Cerrar ficha" onClick={() => setSelectedPerson(null)}><X /></button><span className="eyebrow">{selectedPerson.role==='supervisor'?'Supervisión':'Ficha profesional'}</span><h2>{selectedPerson.display_name}</h2><section className="team-mascot-editor"><div><strong>Mascota del perfil</strong><p className="helper">Como supervisora puedes cambiarla cuando quieras. La persona también podrá volver a elegir otra desde su propia ficha.</p></div><div className="profile-preview compact-team-mascot"><img src={(MASCOTS.find(m=>m.key===teamMascot)??MASCOTS[0]).src} alt={(MASCOTS.find(m=>m.key===teamMascot)??MASCOTS[0]).name}/></div><MascotPicker value={teamMascot} onChange={setTeamMascot} compact/><button className="primary" disabled={teamMascotBusy||teamMascot===selectedPerson.mascot_key} onClick={()=>void savePersonMascot()}>{teamMascotBusy?'Guardando…':'Guardar mascota'}</button></section>{selectedPerson.role==='professional'&&<CoveragePreferences key={selectedPerson.id} person={selectedPerson} consultations={consultations.filter(c=>!isAbsence(c.id))} profile={coverageProfiles.find(p => p.staff_id === selectedPerson.id)} demo={demo} onChange={onCoverageChange} reload={reload} />}</div></div>}
+    {selectedPerson && <div className="modal-backdrop"><div className="modal wide-modal" role="dialog" aria-modal="true" aria-label="Ficha de profesional"><button className="modal-close" aria-label="Cerrar ficha" onClick={() => setSelectedPerson(null)}><X /></button><span className="eyebrow">{selectedPerson.role==='supervisor'?'Supervisión':'Ficha profesional'} · {staffCategoryLabel(selectedPerson.category)}</span><h2>{selectedPerson.display_name}</h2><section className="team-mascot-editor"><div><strong>Mascota del perfil</strong><p className="helper">Como supervisora puedes cambiarla cuando quieras. La persona también podrá volver a elegir otra desde su propia ficha.</p></div><div className="profile-preview compact-team-mascot"><img src={(MASCOTS.find(m=>m.key===teamMascot)??MASCOTS[0]).src} alt={(MASCOTS.find(m=>m.key===teamMascot)??MASCOTS[0]).name}/></div><MascotPicker value={teamMascot} onChange={setTeamMascot} compact/><button className="primary" disabled={teamMascotBusy||teamMascot===selectedPerson.mascot_key} onClick={()=>void savePersonMascot()}>{teamMascotBusy?'Guardando…':'Guardar mascota'}</button></section>{selectedPerson.role==='professional'&&<CoveragePreferences key={selectedPerson.id} person={selectedPerson} consultations={consultations.filter(c=>!isAbsence(c.id))} profile={coverageProfiles.find(p => p.staff_id === selectedPerson.id)} demo={demo} onChange={onCoverageChange} reload={reload} />}</div></div>}
 
     <form className="panel add-person" onSubmit={add}>
       <h2><CircleUserRound /> Añadir perfil</h2>
@@ -828,7 +834,7 @@ function TeamView({ coverageProfiles, onCoverageChange, staff, consultations, de
         <label>Nombre<input required value={name} onChange={e => setName(e.target.value)} /></label>
         <label>Usuario<input required value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))} /></label>
         <label>Correo de acceso<input required type="email" value={email} onChange={e => setEmail(e.target.value)} /></label>
-        <label>Tipo de perfil<select value={role} onChange={e => setRole(e.target.value as Staff['role'])}><option value="professional">Enfermera/o</option><option value="supervisor">Supervisora</option></select></label>
+        <label>Tipo de perfil<select value={role} onChange={e => setRole(e.target.value as Staff['role'])}><option value="professional">Profesional</option><option value="supervisor">Supervisora / Jefa</option></select></label><label>Colectivo<select value={category} onChange={e => setCategory(e.target.value as StaffCategory)}><option value="nursing">Enfermería</option><option value="tcae">TCAE</option><option value="administrative">Administrativa</option><option value="endocrinology">Endocrino</option></select></label>
       </div>
       <MascotPicker value={mascot} onChange={setMascot} compact />
       <button className="primary"><Plus /> Añadir e invitar</button>
@@ -881,7 +887,7 @@ function ProfileView({ coverageProfile, onCoverageChange, consultations, profile
     onUpdated(mascot); setSaved(true); window.setTimeout(() => setSaved(false), 2200)
   }
   const selected = MASCOTS.find(m => m.key === mascot) ?? MASCOTS[0]
-  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu espacio</span><h1>Mi ficha personal</h1><p>Tu mascota y las consultas que puedes cubrir.</p></div></div>{profile.role === 'professional' && <PushSettings userId={profile.user_id} demo={demo} />}{profile.role==='professional'&&<div className="segmented personal-tabs"><button className={personalTab==='coverage'?'active':''} onClick={()=>setPersonalTab('coverage')}>Mis consultas</button><button className={personalTab==='mascot'?'active':''} onClick={()=>setPersonalTab('mascot')}>Mi mascota</button></div>}{personalTab==='coverage'&&profile.role==='professional'?<CoveragePreferences person={profile} consultations={consultations.filter(c=>!isAbsence(c.id))} profile={coverageProfile} demo={demo} onChange={onCoverageChange} reload={reload}/>:<div className="profile-layout"><div className="panel profile-preview"><img src={selected.src} alt={selected.name} /><span>{selected.greeting}</span><h2>{profile.display_name}</h2><p>@{profile.username} · {profile.role === 'supervisor' ? 'Supervisora' : 'Profesional'}</p></div><div className="panel"><h2>Elige tu compañera</h2><MascotPicker value={mascot} onChange={setMascot} /><button className="primary" onClick={save}>{saved ? <><Check /> Guardado</> : 'Guardar mascota'}</button></div></div>}</section>
+  return <section className="content-section"><div className="section-heading"><div><span className="eyebrow">Tu espacio</span><h1>Mi ficha personal</h1><p>Tu mascota y las consultas que puedes cubrir.</p></div></div>{profile.role === 'professional' && <PushSettings userId={profile.user_id} demo={demo} />}{profile.role==='professional'&&<div className="segmented personal-tabs"><button className={personalTab==='coverage'?'active':''} onClick={()=>setPersonalTab('coverage')}>Mis consultas</button><button className={personalTab==='mascot'?'active':''} onClick={()=>setPersonalTab('mascot')}>Mi mascota</button></div>}{personalTab==='coverage'&&profile.role==='professional'?<CoveragePreferences person={profile} consultations={consultations.filter(c=>!isAbsence(c.id))} profile={coverageProfile} demo={demo} onChange={onCoverageChange} reload={reload}/>:<div className="profile-layout"><div className="panel profile-preview"><img src={selected.src} alt={selected.name} /><span>{selected.greeting}</span><h2>{profile.display_name}</h2><p>@{profile.username} · {profile.role === 'supervisor' ? 'Supervisora / Jefa' : 'Profesional'} · {staffCategoryLabel(profile.category)}</p></div><div className="panel"><h2>Elige tu compañera</h2><MascotPicker value={mascot} onChange={setMascot} /><button className="primary" onClick={save}>{saved ? <><Check /> Guardado</> : 'Guardar mascota'}</button></div></div>}</section>
 }
 
 function MascotPicker({ value, onChange, compact = false }: { value: MascotKey; onChange: (m: MascotKey) => void; compact?: boolean }) {
