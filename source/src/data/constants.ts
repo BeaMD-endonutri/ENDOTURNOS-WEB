@@ -13,12 +13,12 @@ export const MASCOTS: Array<{ key: MascotKey; name: string; src: string; greetin
   { key: 'yogurt', name: 'Yogur desnatado', src: `${import.meta.env.BASE_URL}mascots/yogurt.png?v=5`, greeting: '¡Un turno ligero y redondo!' },
   { key: 'toast', name: 'Tostada', src: `${import.meta.env.BASE_URL}mascots/toast.png?v=5`, greeting: '¡A por el turno con energía!' },
   { key: 'avocado', name: 'Aguacate', src: `${import.meta.env.BASE_URL}mascots/avocado.png?v=5`, greeting: '¡Hoy lo damos todo!' },
-  { key: 'egg', name: 'Huevo', src: `${import.meta.env.BASE_URL}mascots/egg.png?v=2`, greeting: '¡Hoy vienes con energía!' },
-  { key: 'turnip', name: 'Nabo', src: `${import.meta.env.BASE_URL}mascots/turnip.png?v=2`, greeting: '¡Hoy le ponemos alegría al turno!' },
-  { key: 'thyroid', name: 'Tiroides', src: `${import.meta.env.BASE_URL}mascots/thyroid.png?v=2`, greeting: '¡Todo en equilibrio para hoy!' },
-  { key: 'broccoli', name: 'Brócoli', src: `${import.meta.env.BASE_URL}mascots/broccoli.png?v=2`, greeting: '¡A por un turno lleno de energía!' },
-  { key: 'strawberry', name: 'Fresita', src: `${import.meta.env.BASE_URL}mascots/strawberry.png?v=2`, greeting: '¡Hoy toca un turno muy dulce!' },
-  { key: 'measuring_tape', name: 'Cinta métrica', src: `${import.meta.env.BASE_URL}mascots/measuring-tape.png?v=2`, greeting: '¡Todo encaja a la medida!' },
+  { key: 'egg', name: 'Huevo', src: `${import.meta.env.BASE_URL}mascots/egg.png?v=3`, greeting: '¡Hoy vienes con energía!' },
+  { key: 'turnip', name: 'Nabo', src: `${import.meta.env.BASE_URL}mascots/turnip.png?v=3`, greeting: '¡Hoy le ponemos alegría al turno!' },
+  { key: 'thyroid', name: 'Tiroides', src: `${import.meta.env.BASE_URL}mascots/thyroid.png?v=3`, greeting: '¡Todo en equilibrio para hoy!' },
+  { key: 'broccoli', name: 'Brócoli', src: `${import.meta.env.BASE_URL}mascots/broccoli.png?v=3`, greeting: '¡A por un turno lleno de energía!' },
+  { key: 'strawberry', name: 'Fresita', src: `${import.meta.env.BASE_URL}mascots/strawberry.png?v=3`, greeting: '¡Hoy toca un turno muy dulce!' },
+  { key: 'measuring_tape', name: 'Cinta métrica', src: `${import.meta.env.BASE_URL}mascots/measuring-tape.png?v=3`, greeting: '¡Todo encaja a la medida!' },
 ]
 
 export const STAFF_IDS = {
