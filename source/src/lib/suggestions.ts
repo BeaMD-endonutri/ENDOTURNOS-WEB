@@ -12,7 +12,7 @@ export function cadenceAllows(profile:CoverageProfile|undefined,date:string,star
  return !!profile?.work_cadences?.some(r=>date>=r.valid_from&&date<=r.valid_until&&r.weekdays.includes(getDay(parseISO(date)))&&r.start_time<=start&&r.end_time>=end&&differenceInCalendarWeeks(parseISO(date),parseISO(r.anchor_date),{weekStartsOn:1})%r.every_weeks===0)
 }
 export const duration=(a:Pick<Assignment,'start_time'|'end_time'>)=>{const m=(t:string)=>Number(t.slice(0,2))*60+Number(t.slice(3,5));return m(a.end_time)-m(a.start_time)}
-export function weeklyLoad(person:string,date:string,rows:Assignment[]){const from=format(startOfWeek(parseISO(date),{weekStartsOn:1}),'yyyy-MM-dd');const to=format(addDays(parseISO(from),6),'yyyy-MM-dd');return rows.filter(a=>a.professional_id===person&&a.work_date>=from&&a.work_date<=to).reduce((sum,a)=>sum+duration(a),0)}
+export function weeklyLoad(person:string,date:string,rows:Assignment[]){const from=format(startOfWeek(parseISO(date),{weekStartsOn:1}),'yyyy-MM-dd');const to=format(addDays(parseISO(from),6),'yyyy-MM-dd');return rows.filter(a=>a.professional_id===person&&a.work_date>=from&&a.work_date<=to&&!isAbsence(a.consultation_id)).reduce((sum,a)=>sum+duration(a),0)}
 export function cadenceWeekCapacity(profile:CoverageProfile|undefined,date:string){
  if(!profile?.work_cadences?.length)return 0
  const weekStart=startOfWeek(parseISO(date),{weekStartsOn:1})
