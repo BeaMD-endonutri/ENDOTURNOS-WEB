@@ -50,18 +50,30 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   if(!open)warnings.push(`${c.label}: sin franjas abiertas este mes; revisa la vigencia y las suspensiones.`)
  }
  const coverage=(s:Slot,date:string)=>minimumCoverage(workingIntervals(working).filter(a=>[s.c.id,...(s.r.alternatives??[])].includes(a.consultation_id)&&a.work_date===date&&!hasAbsence(a.professional_id,date,requests)),s.r.start_time,s.r.end_time)
- const available=(s:Slot,date:string)=>{const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const tier=(id:string)=>preferred.includes(id)?0:secondary.includes(id)?1:2;return staff.filter(p=>p.active&&p.role==='professional').map(person=>({person,profile:profiles.find(p=>p.staff_id===person.id)})).filter(({person,profile})=>profile?.consultation_ids.includes(s.c.id)&&cadenceAllows(profile,date,s.r.start_time,s.r.end_time)&&!assignmentConflicts({professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false},working,requests,consultations).length&&weeklyLoad(person.id,date,working)+duration(s.r)<=Math.max(person.weekly_minutes,cadenceWeekCapacity(profile,date))).sort((a,b)=>tier(a.person.id)-tier(b.person.id)||(a.profile!.consultation_ids.indexOf(s.c.id)-b.profile!.consultation_ids.indexOf(s.c.id))||(weeklyLoad(a.person.id,date,working)/Math.max(a.person.weekly_minutes,cadenceWeekCapacity(a.profile,date))-weeklyLoad(b.person.id,date,working)/Math.max(b.person.weekly_minutes,cadenceWeekCapacity(b.profile,date)))||a.person.display_name.localeCompare(b.person.display_name,'es'))}
- // Allocate scarce recurring services first, one place per service before filling second places.
- const recurring=slots.filter(s=>!s.r.monthly)
- for(let level=1;level<=Math.max(0,...recurring.map(s=>s.target));level++){
-  const ordered=[...recurring].filter(s=>s.target>=level).sort((a,b)=>available(a,a.dates[0]).length-available(b,b.dates[0]).length||a.dates[0].localeCompare(b.dates[0])||a.c.id.localeCompare(b.c.id))
-  for(const s of ordered)fill(s,s.dates[0],level)
- }
- // A monthly service is placed on the date with the best achievable coverage, never once per weekday.
+ const profilePriority=(profile:CoverageProfile|undefined,consultationId:string)=>{const index=profile?.consultation_ids.indexOf(consultationId)??-1;return index<0?999:index}
+ const available=(s:Slot,date:string)=>{const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const tier=(id:string)=>preferred.includes(id)?0:secondary.includes(id)?1:2;return staff.filter(p=>p.active&&p.role==='professional').map(person=>({person,profile:profiles.find(p=>p.staff_id===person.id)})).filter(({person,profile})=>profile?.consultation_ids.includes(s.c.id)&&cadenceAllows(profile,date,s.r.start_time,s.r.end_time)&&!assignmentConflicts({professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false},working,requests,consultations).length).sort((a,b)=>tier(a.person.id)-tier(b.person.id)||profilePriority(a.profile,s.c.id)-profilePriority(b.profile,s.c.id)||(weeklyLoad(a.person.id,date,working)/Math.max(a.person.weekly_minutes,cadenceWeekCapacity(a.profile,date))-weeklyLoad(b.person.id,date,working)/Math.max(b.person.weekly_minutes,cadenceWeekCapacity(b.profile,date)))||a.person.display_name.localeCompare(b.person.display_name,'es'))}
+ const bestPersonalPriority=(s:Slot,date:string)=>Math.min(999,...available(s,date).map(({profile})=>profilePriority(profile,s.c.id)))
+ const monthlyFixed:Slot[]=[]
  for(const s of slots.filter(s=>s.r.monthly)){
   if(s.dates.some(d=>coverage(s,d)>=s.target))continue
-  const date=[...s.dates].sort((a,b)=>Math.min(s.target,coverage(s,b)+available(s,b).length)-Math.min(s.target,coverage(s,a)+available(s,a).length)||coverage(s,b)-coverage(s,a)||a.localeCompare(b))[0]
-  fill(s,date,s.target)
+  const date=[...s.dates].sort((a,b)=>{
+   const achievableA=Math.min(s.target,coverage(s,a)+available(s,a).length),achievableB=Math.min(s.target,coverage(s,b)+available(s,b).length)
+   return achievableB-achievableA||bestPersonalPriority(s,a)-bestPersonalPriority(s,b)||available(s,a).length-available(s,b).length||a.localeCompare(b)
+  })[0]
+  if(date)monthlyFixed.push({...s,dates:[date]})
+ }
+ // Allocate all competing services together. Scarcity comes first; when candidate
+ // counts tie, protect the consultation that is highest in a professional's own priority list.
+ const allocationSlots=[...slots.filter(s=>!s.r.monthly),...monthlyFixed]
+ for(let level=1;level<=Math.max(0,...allocationSlots.map(s=>s.target));level++){
+  const ordered=[...allocationSlots].filter(s=>s.target>=level).sort((a,b)=>{
+   const da=a.dates[0],db=b.dates[0]
+   return available(a,da).length-available(b,db).length
+    ||bestPersonalPriority(a,da)-bestPersonalPriority(b,db)
+    ||da.localeCompare(db)
+    ||a.c.id.localeCompare(b.c.id)
+  })
+  for(const s of ordered)fill(s,s.dates[0],level)
  }
 
  // Personal work cadences are hard constraints: every active cadence interval must
