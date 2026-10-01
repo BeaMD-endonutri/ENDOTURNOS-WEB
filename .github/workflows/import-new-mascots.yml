@@ -1,0 +1,41 @@
+name: Import high quality mascots
+
+on:
+  push:
+    paths:
+      - '.github/workflows/import-new-mascots.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download original mascot PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mascots
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/da88710cb991c6f86f025e8802eee8dfbfd440193ce4bfeb6178ff12f63fe93f.png' -o mascots/egg.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/09f5f8ea1b2053dd2ad8012afce8b82279ae311cad005388f83093ef07129160.png' -o mascots/turnip.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/a6a44126ab0b0d2c5597502c981f070f2c4213c1c9bc6b4e984a27bc896f15c3.png' -o mascots/thyroid.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/c75c1ff13e6bb681c98d49999425a805cd5d69a8f8cc24c297e73327bbf55543.png' -o mascots/broccoli.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/0338f7c712a7f8818d8fbd0700e09bfe451daaa65d129bfe891bf5c1a3dabd41.png' -o mascots/strawberry.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/2f33bfea0c261b8bee5b03e7771bc9209d70373a410250896f1fc2536668535b.png' -o mascots/measuring-tape.png
+
+          for f in mascots/egg.png mascots/turnip.png mascots/thyroid.png mascots/broccoli.png mascots/strawberry.png mascots/measuring-tape.png; do
+            file "$f" | grep -q 'PNG image data'
+            test "$(stat -c%s "$f")" -gt 500000
+          done
+      - name: Commit high quality originals
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mascots/egg.png mascots/turnip.png mascots/thyroid.png mascots/broccoli.png mascots/strawberry.png mascots/measuring-tape.png
+          git commit -m "fix: replace mascot assets with high quality originals"
+          git push origin HEAD:main
