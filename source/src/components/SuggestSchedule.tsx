@@ -1,3 +1,4 @@
+// Reference exceptions are explicit supervisor opt-ins; normal suggestions stay automatic.
 import {useEffect,useState} from 'react'
 import {endOfMonth,format,parseISO} from 'date-fns'
 import {X} from 'lucide-react'
