@@ -1,0 +1,47 @@
+name: Point app to high quality mascots
+
+on:
+  push:
+    paths:
+      - '.github/workflows/use-high-quality-mascots.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Update mascot asset paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('source/src/data/constants.ts')
+          s = p.read_text()
+          repl = {
+            'mascots/egg.webp?v=1':'mascots/egg.png?v=2',
+            'mascots/turnip.webp?v=1':'mascots/turnip.png?v=2',
+            'mascots/thyroid.webp?v=1':'mascots/thyroid.png?v=2',
+            'mascots/broccoli.webp?v=1':'mascots/broccoli.png?v=2',
+            'mascots/strawberry.webp?v=1':'mascots/strawberry.png?v=2',
+            'mascots/measuring-tape.webp?v=1':'mascots/measuring-tape.png?v=2',
+          }
+          for a,b in repl.items():
+              if a not in s:
+                  raise SystemExit(f'Missing expected asset path: {a}')
+              s=s.replace(a,b)
+          p.write_text(s)
+          PY
+      - name: Commit asset path fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add source/src/data/constants.ts
+          git commit -m "fix: use verified high quality mascot PNG assets"
+          git push origin HEAD:main
