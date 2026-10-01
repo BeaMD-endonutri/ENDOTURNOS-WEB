@@ -27,6 +27,7 @@ jobs:
           curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/9908c0837a4c3fe3e6c98e4f8d5a89adc5a4e8b888be0a2a6878dd609832de88.png' -o mascots/strawberry.png
           curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/86a31a6a34ae566cb761a7eeda001971156cacb40aa31da3a5e5f9ba2110c73c.png' -o mascots/measuring-tape.png
 
+          python3 -m pip install --quiet pillow
           python3 - <<'PY'
           from PIL import Image
           files = [
