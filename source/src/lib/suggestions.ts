@@ -90,6 +90,29 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   return cursor>=end
  }
  const cadenceBlocked=(person:string,date:string,start:string,end:string)=>hasAbsence(person,date,requests)||working.some(a=>a.professional_id===person&&a.work_date===date&&isAbsence(a.consultation_id)&&a.start_time<end&&a.end_time>start)
+ const ruleTier=(s:Slot,id:string)=>{const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];return preferred.includes(id)?0:secondary.includes(id)?1:2}
+ const rebalanceForMandatoryCadence=(person:Staff,profile:CoverageProfile,date:string,start:string,end:string,options:Slot[])=>{
+  const shortages=slots.filter(s=>!s.r.monthly&&s.dates.includes(date)&&s.r.start_time>=start&&s.r.end_time<=end&&coverage(s,date)<s.target)
+  const coveredOptions=options.filter(s=>coverage(s,date)>=s.target)
+  for(const target of coveredOptions){
+   const occupants=proposed.filter(row=>row.work_date===date&&row.consultation_id===target.c.id&&row.start_time===target.r.start_time&&row.end_time===target.r.end_time)
+   for(const occupant of occupants){
+    const mover=staff.find(p=>p.id===occupant.professional_id),moverProfile=profiles.find(p=>p.staff_id===occupant.professional_id)
+    if(!mover||!moverProfile)continue
+    const alternatives=shortages.filter(shortage=>moverProfile.consultation_ids.includes(shortage.c.id)&&cadenceAllows(moverProfile,date,shortage.r.start_time,shortage.r.end_time)&&ruleTier(shortage,mover.id)<2).filter(shortage=>{
+     const next={professional_id:mover.id,work_date:date,consultation_id:shortage.c.id,start_time:shortage.r.start_time,end_time:shortage.r.end_time,provisional:false}
+     return !assignmentConflicts(next,working.filter(a=>a.id!==occupant.id),requests,consultations).length
+    }).sort((a,b)=>ruleTier(a,mover.id)-ruleTier(b,mover.id)||profilePriority(moverProfile,a.c.id)-profilePriority(moverProfile,b.c.id)||a.c.id.localeCompare(b.c.id))
+    const shortage=alternatives[0]
+    if(!shortage)continue
+    occupant.consultation_id=shortage.c.id;occupant.start_time=shortage.r.start_time;occupant.end_time=shortage.r.end_time
+    occupant.suggestion_reason=ruleTier(shortage,mover.id)===0?'Reequilibrio: profesional habitual para cubrir otra necesidad':'Reequilibrio: alternativa para cubrir otra necesidad'
+    occupant.reference_exception=false
+    return target
+   }
+  }
+  return undefined
+ }
  const addCadenceShift=(person:Staff,profile:CoverageProfile,date:string,start:string,end:string)=>{
   let guard=0
   while(!cadenceCovered(person.id,date,start,end)&&guard++<12){
@@ -102,7 +125,8 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
     const prefB=(b.r.preferred_staff_ids??(b.c.preferred_staff_id?[b.c.preferred_staff_id]:[])).includes(person.id)?0:(b.r.secondary_staff_ids??b.c.secondary_staff_ids??[]).includes(person.id)?1:2
     return needA-needB||prefA-prefB||profile.consultation_ids.indexOf(a.c.id)-profile.consultation_ids.indexOf(b.c.id)||a.r.start_time.localeCompare(b.r.start_time)
    })
-   const chosen=options[0]
+   let chosen=options.find(s=>coverage(s,date)<s.target)
+   if(!chosen&&options.length)chosen=rebalanceForMandatoryCadence(person,profile,date,start,end,options)??options[0]
    if(!chosen)break
    const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:person.id,work_date:date,consultation_id:chosen.c.id,start_time:chosen.r.start_time,end_time:chosen.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:'Cadencia obligatoria del profesional',reference_exception:false}
    proposed.push(row);working.push(row)
