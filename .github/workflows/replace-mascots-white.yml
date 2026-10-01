@@ -1,0 +1,41 @@
+name: Replace mascots with white-background originals
+
+on:
+  push:
+    paths:
+      - '.github/workflows/replace-mascots-white.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download white-background mascot PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mascots
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/502e0039bbc5a81aeedfbd3d60801d62abbf3b08449cd81f702de9593a031949.png' -o mascots/egg.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/11577c071ced9db2285b2b9772870fe699096c30e06cb33b6b0a432c867db96c.png' -o mascots/turnip.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/b9ac51617cf1fb2d33f96f0594692d4b625af405f4205e2cb995423aae4e7234.png' -o mascots/thyroid.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/767f67d265b9c33d7c8af071e27737c324bf364721509df2220836c833094251.png' -o mascots/broccoli.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/46abd03fbf48a37c227e92c17df0985c0dba9d6249a2bd259cb89f61edef3617.png' -o mascots/strawberry.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/6808440a4a01ab5d4162f95695ae1ca88e3b162b63e873d1312ef29951ac809c.png' -o mascots/measuring-tape.png
+
+          for f in mascots/egg.png mascots/turnip.png mascots/thyroid.png mascots/broccoli.png mascots/strawberry.png mascots/measuring-tape.png; do
+            file "$f" | grep -q 'PNG image data'
+            test "$(stat -c%s "$f")" -gt 1000000
+          done
+      - name: Commit replacements
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mascots/egg.png mascots/turnip.png mascots/thyroid.png mascots/broccoli.png mascots/strawberry.png mascots/measuring-tape.png
+          git commit -m "fix: use white background mascot originals"
+          git push origin HEAD:main
