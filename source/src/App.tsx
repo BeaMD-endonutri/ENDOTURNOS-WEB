@@ -320,11 +320,12 @@ function Workspace({ session, demo, onExitDemo }: { session: Session | null; dem
     if (demo) {setAssignments(prev=>prev.filter(row=>row.id!==a.id));addHistory(a,null);return null}
     const {error}=await supabase!.rpc('et_delete_assignment',{p_id:a.id,p_expected_updated_at:a.updated_at});if(error)return error.message;await loadData();return null
   }
-  const clearMonthAssignments = async (month:string): Promise<string | null> => {
-    const rows=assignments.filter(a=>a.work_date.startsWith(month))
+  const clearMonthAssignments = async (month:string,preserveConsultationIds:string[]=[]): Promise<string | null> => {
+    const keep=new Set(preserveConsultationIds)
+    const rows=assignments.filter(a=>a.work_date.startsWith(month)&&!keep.has(a.consultation_id))
     if(!rows.length)return null
-    if(demo){setAssignments(current=>current.filter(a=>!a.work_date.startsWith(month)));rows.forEach(a=>addHistory(a,null));return null}
-    for(const row of rows){const {error}=await supabase!.rpc('et_delete_assignment',{p_id:row.id,p_expected_updated_at:row.updated_at});if(error){await loadData();return `No se ha podido borrar todo el mes: ${error.message}`}}
+    if(demo){setAssignments(current=>current.filter(a=>!a.work_date.startsWith(month)||keep.has(a.consultation_id)));rows.forEach(a=>addHistory(a,null));return null}
+    for(const row of rows){const {error}=await supabase!.rpc('et_delete_assignment',{p_id:row.id,p_expected_updated_at:row.updated_at});if(error){await loadData();return `No se ha podido borrar el mes: ${error.message}`}}
     await loadData();return null
   }
   const restoreMonthAssignments = async (rows:Assignment[]): Promise<string | null> => {
