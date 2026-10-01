@@ -1,3 +1,4 @@
+// republish cadence-capacity fix
 import { isAbsence, workingIntervals } from './absences'
 import {addDays,differenceInCalendarWeeks,endOfMonth,format,getDay,parseISO,startOfWeek} from 'date-fns'
 import type {Assignment,Consultation,CoverageException,CoverageProfile,CoverageRule,ShiftRequest,Staff} from '../types'
