@@ -57,3 +57,5 @@ jobs:
             git commit -m "deploy: publish EndoTurnos update"
             git push
           fi
+
+# mascot refresh trigger
