@@ -63,6 +63,52 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   const date=[...s.dates].sort((a,b)=>Math.min(s.target,coverage(s,b)+available(s,b).length)-Math.min(s.target,coverage(s,a)+available(s,a).length)||coverage(s,b)-coverage(s,a)||a.localeCompare(b))[0]
   fill(s,date,s.target)
  }
+
+ // Personal work cadences are hard constraints: every active cadence interval must
+ // contain real work unless the professional has an approved/recorded absence.
+ const cadenceCovered=(person:string,date:string,start:string,end:string)=>{
+  const rows=working.filter(a=>a.professional_id===person&&a.work_date===date&&!isAbsence(a.consultation_id)&&a.start_time<end&&a.end_time>start).sort((a,b)=>a.start_time.localeCompare(b.start_time))
+  let cursor=start
+  for(const a of rows){
+   if(a.end_time<=cursor)continue
+   if(a.start_time>cursor)return false
+   if(a.end_time>cursor)cursor=a.end_time
+   if(cursor>=end)return true
+  }
+  return cursor>=end
+ }
+ const cadenceBlocked=(person:string,date:string,start:string,end:string)=>hasAbsence(person,date,requests)||working.some(a=>a.professional_id===person&&a.work_date===date&&isAbsence(a.consultation_id)&&a.start_time<end&&a.end_time>start)
+ const addCadenceShift=(person:Staff,profile:CoverageProfile,date:string,start:string,end:string)=>{
+  let guard=0
+  while(!cadenceCovered(person.id,date,start,end)&&guard++<12){
+   const options=slots.filter(s=>!s.r.monthly&&s.dates.includes(date)&&s.r.start_time>=start&&s.r.end_time<=end&&profile.consultation_ids.includes(s.c.id)).filter(s=>{
+    const next={professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false}
+    return !assignmentConflicts(next,working,requests,consultations).length
+   }).sort((a,b)=>{
+    const needA=coverage(a,date)<a.target?0:1,needB=coverage(b,date)<b.target?0:1
+    const prefA=(a.r.preferred_staff_ids??(a.c.preferred_staff_id?[a.c.preferred_staff_id]:[])).includes(person.id)?0:(a.r.secondary_staff_ids??a.c.secondary_staff_ids??[]).includes(person.id)?1:2
+    const prefB=(b.r.preferred_staff_ids??(b.c.preferred_staff_id?[b.c.preferred_staff_id]:[])).includes(person.id)?0:(b.r.secondary_staff_ids??b.c.secondary_staff_ids??[]).includes(person.id)?1:2
+    return needA-needB||prefA-prefB||profile.consultation_ids.indexOf(a.c.id)-profile.consultation_ids.indexOf(b.c.id)||a.r.start_time.localeCompare(b.r.start_time)
+   })
+   const chosen=options[0]
+   if(!chosen)break
+   const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:person.id,work_date:date,consultation_id:chosen.c.id,start_time:chosen.r.start_time,end_time:chosen.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:'Cadencia obligatoria del profesional',reference_exception:false}
+   proposed.push(row);working.push(row)
+  }
+  if(!cadenceCovered(person.id,date,start,end))warnings.push(`${person.display_name}: no se ha podido cubrir su cadencia obligatoria del ${date} (${start.slice(0,5)}–${end.slice(0,5)}). Revisa consultas compatibles, ausencias o solapamientos.`)
+ }
+ for(const person of staff.filter(p=>p.active&&p.role==='professional')){
+  const profile=profiles.find(p=>p.staff_id===person.id)
+  if(!profile?.work_cadences?.length)continue
+  for(let d=parseISO(from);format(d,'yyyy-MM-dd')<=until;d=addDays(d,1)){
+   const date=format(d,'yyyy-MM-dd'),dow=getDay(d)
+   for(const cadence of profile.work_cadences){
+    if(date<cadence.valid_from||date>cadence.valid_until||!cadence.weekdays.includes(dow)||differenceInCalendarWeeks(d,parseISO(cadence.anchor_date),{weekStartsOn:1})%cadence.every_weeks!==0)continue
+    if(cadenceBlocked(person.id,date,cadence.start_time,cadence.end_time))continue
+    addCadenceShift(person,profile,date,cadence.start_time,cadence.end_time)
+   }
+  }
+ }
  function fill(s:Slot,date:string,target:number){
   while(coverage(s,date)<target){const candidate=available(s,date)[0];if(!candidate)break
    const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const referenceException=!preferred.includes(candidate.person.id)&&!secondary.includes(candidate.person.id);const reason=preferred.includes(candidate.person.id)?'Profesional habitual de esta regla':secondary.includes(candidate.person.id)?'Alternativa de esta regla':'Cobertura excepcional: no hay habitual/alternativa disponible';const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:reason,reference_exception:referenceException}
