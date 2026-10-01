@@ -6,7 +6,7 @@ import {assignmentConflicts,defaultCoverageRules,hasAbsence} from './scheduling'
 import {copyRuleCheck} from './planning'
 import {buildCoverageIssues,minimumCoverage,sameCoverageRule} from './coverage'
 export interface SuggestionContext {staff:Staff[];consultations:Consultation[];assignments:Assignment[];requests:ShiftRequest[];profiles:CoverageProfile[];exceptions:CoverageException[];planning:PlanningConfig;fingerprint:string}
-export interface SuggestedShift extends Assignment {suggestion_reason:string}
+export interface SuggestedShift extends Assignment {suggestion_reason:string;reference_exception?:boolean}
 export function cadenceAllows(profile:CoverageProfile|undefined,date:string,start:string,end:string){
  return !!profile?.work_cadences?.some(r=>date>=r.valid_from&&date<=r.valid_until&&r.weekdays.includes(getDay(parseISO(date)))&&r.start_time<=start&&r.end_time>=end&&differenceInCalendarWeeks(parseISO(date),parseISO(r.anchor_date),{weekStartsOn:1})%r.every_weeks===0)
 }
@@ -52,7 +52,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  }
  function fill(s:Slot,date:string,target:number){
   while(coverage(s,date)<target){const candidate=available(s,date)[0];if(!candidate)break
-   const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const reason=preferred.includes(candidate.person.id)?'Profesional habitual de esta regla':secondary.includes(candidate.person.id)?'Alternativa de esta regla':'Profesional compatible disponible';const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:reason}
+   const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const referenceException=!preferred.includes(candidate.person.id)&&!secondary.includes(candidate.person.id);const reason=preferred.includes(candidate.person.id)?'Profesional habitual de esta regla':secondary.includes(candidate.person.id)?'Alternativa de esta regla':'Cobertura excepcional: no hay habitual/alternativa disponible';const row:SuggestedShift={id:`suggest-${proposed.length}`,professional_id:candidate.person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:true,is_extra:false,override_reason:null,notes:null,suggestion_reason:reason,reference_exception:referenceException}
    proposed.push(row);working.push(row)
   }
  }
