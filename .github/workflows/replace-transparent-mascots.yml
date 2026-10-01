@@ -1,0 +1,70 @@
+name: Replace mascots with transparent backgrounds
+
+on:
+  push:
+    paths:
+      - '.github/workflows/replace-transparent-mascots.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download transparent mascot PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mascots
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/52d578a087700da7181d683cdb970bd09f836c9c68ab83b3f543c58781977129.png' -o mascots/egg.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/08bbf01c9dda231871f758d3ea58218d767c01bba2f3232399c84e1772a08a49.png' -o mascots/turnip.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/086f3789e22b2661a1e28db443e46975d453ed16651b50516fc1d76952c3822a.png' -o mascots/thyroid.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/c11198f3df553b13baf317f7d6282f2ba9db82ce5cf778b90d464085c22d3bfe.png' -o mascots/broccoli.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/9908c0837a4c3fe3e6c98e4f8d5a89adc5a4e8b888be0a2a6878dd609832de88.png' -o mascots/strawberry.png
+          curl -fL --retry 3 'https://cdn.openart.ai/openart-uploads/production/attachment-transfers/86a31a6a34ae566cb761a7eeda001971156cacb40aa31da3a5e5f9ba2110c73c.png' -o mascots/measuring-tape.png
+
+          python3 - <<'PY'
+          from PIL import Image
+          files = [
+            'mascots/egg.png','mascots/turnip.png','mascots/thyroid.png',
+            'mascots/broccoli.png','mascots/strawberry.png','mascots/measuring-tape.png'
+          ]
+          for f in files:
+              im = Image.open(f)
+              if im.size != (1254,1254):
+                  raise SystemExit(f'Unexpected size for {f}: {im.size}')
+              if im.mode != 'RGBA':
+                  raise SystemExit(f'{f} is not RGBA: {im.mode}')
+              alpha = im.getchannel('A')
+              extrema = alpha.getextrema()
+              if extrema[0] != 0 or extrema[1] != 255:
+                  raise SystemExit(f'{f} does not contain full transparency range: {extrema}')
+              print(f, im.mode, im.size, extrema)
+          PY
+      - name: Update asset cache version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('source/src/data/constants.ts')
+          s = p.read_text()
+          s = s.replace('mascots/egg.png?v=3','mascots/egg.png?v=4')
+          s = s.replace('mascots/turnip.png?v=3','mascots/turnip.png?v=4')
+          s = s.replace('mascots/thyroid.png?v=3','mascots/thyroid.png?v=4')
+          s = s.replace('mascots/broccoli.png?v=3','mascots/broccoli.png?v=4')
+          s = s.replace('mascots/strawberry.png?v=3','mascots/strawberry.png?v=4')
+          s = s.replace('mascots/measuring-tape.png?v=3','mascots/measuring-tape.png?v=4')
+          p.write_text(s)
+          PY
+      - name: Commit transparent mascot assets
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mascots/egg.png mascots/turnip.png mascots/thyroid.png mascots/broccoli.png mascots/strawberry.png mascots/measuring-tape.png source/src/data/constants.ts
+          git commit -m "fix: use transparent mascot assets"
+          git push origin HEAD:main
