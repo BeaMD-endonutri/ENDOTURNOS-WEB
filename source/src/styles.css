@@ -1282,3 +1282,12 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
 .recurrence-box .weekday-picker{margin:0}
 .recurrence-box>label{max-width:250px}
 .recurrence-quick{margin-top:6px;align-self:flex-start}
+
+
+.coverage-reduced-panel{grid-column:1/-1;border:1px solid rgba(47,111,85,.28);background:rgba(47,111,85,.07);border-radius:14px;padding:14px 16px;display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
+.coverage-reduced-toggle{display:flex!important;flex-direction:row!important;align-items:flex-start!important;gap:10px!important;flex:1}
+.coverage-reduced-toggle input{margin-top:3px;flex:0 0 auto}
+.coverage-reduced-toggle span{display:flex;flex-direction:column;gap:3px}
+.coverage-reduced-toggle small{font-weight:400;opacity:.78;line-height:1.35}
+.coverage-minimum-field{min-width:150px}
+@media (max-width:700px){.coverage-reduced-panel{flex-direction:column}.coverage-minimum-field{width:100%}}
