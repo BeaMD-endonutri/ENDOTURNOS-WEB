@@ -12,14 +12,14 @@ export function assignmentConflicts(next: Omit<Assignment, 'id'> & { id?: string
 }
 export function defaultCoverageRules(id: string): CoverageRule[] {
   const rules: CoverageRule[] = []
-  const add = (days: number[], afternoon = false, minimum = 1, every = 1, anchor = '2026-09-28', monthly = false, alternatives?: string[]) => rules.push({ id: `${id}-${rules.length}`, weekdays: days, start_time: afternoon ? '15:00' : '08:00', end_time: afternoon ? '20:00' : '15:00', min_staff: minimum, every_weeks: every, anchor_date: anchor, monthly, valid_from: '2026-10-01', valid_until: '2026-12-31', suspensions: afternoon ? [{ from: '2026-12-15', to: '2027-01-07' }] : [], alternatives, preferred_staff_ids: [], secondary_staff_ids: [] })
+  const add = (days: number[], afternoon = false, minimum = 1, every = 1, anchor = '2026-09-28', monthly = false, alternatives?: string[], fallbackMinimum?: number) => rules.push({ id: `${id}-${rules.length}`, weekdays: days, start_time: afternoon ? '15:00' : '08:00', end_time: afternoon ? '20:00' : '15:00', min_staff: minimum, ...(fallbackMinimum && fallbackMinimum < minimum ? { fallback_min_staff: fallbackMinimum } : {}), every_weeks: every, anchor_date: anchor, monthly, valid_from: '2026-10-01', valid_until: '2026-12-31', suspensions: afternoon ? [{ from: '2026-12-15', to: '2027-01-07' }] : [], alternatives })
   switch (id) {
     case 'PLANTA': add([1,2,3,4,5], false, 2); break
     case 'HDD': add([1,2,3,4,5]); add([1,2,3], true); break
     case 'AMBULATORIO': add([1,2,3,4]); break
     case 'EDA': add([4,5]); add([1], false, 1, 2, '2026-10-05'); add([4], true); break
     case 'NUTRICION': add([2,3,4]); add([1], false, 1, 4, '2026-10-19'); add([2], true); break
-    case 'EPA': add([2,3,5]); add([4], false, 1, 1, '2026-09-28', true); break
+    case 'EPA': add([2,5]); add([3], false, 2, 1, '2026-09-28', false, undefined, 1); add([4], false, 1, 1, '2026-09-28', true); break
     case 'EN1': add([4], false, 1, 2); add([3], true); break
     case 'EN2': add([2]); break
     case 'PF': add([3], false, 1, 1, '2026-09-28', false, ['PAAF']); break
