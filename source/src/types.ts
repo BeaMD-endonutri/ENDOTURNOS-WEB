@@ -1,5 +1,6 @@
 export type Role = 'supervisor' | 'professional'
-export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell'
+export type StaffCategory = 'nursing' | 'tcae' | 'administrative' | 'endocrinology'
+export type MascotKey = 'apple' | 'flame' | 'puffin' | 'worm' | 'cat' | 'llama' | 'glucometer' | 'pineapple' | 'dumbbell' | 'yogurt' | 'toast' | 'avocado' | 'egg' | 'turnip' | 'thyroid' | 'broccoli' | 'strawberry' | 'measuring_tape'
 
 export interface Staff {
   id: string
@@ -7,6 +8,7 @@ export interface Staff {
   display_name: string
   username: string
   role: Role
+  category?: StaffCategory
   mascot_key: MascotKey
   active: boolean
   weekly_minutes: number
@@ -21,6 +23,8 @@ export interface Consultation {
   active: boolean
   default_start_time?: string
   default_end_time?: string
+  preferred_staff_id?: string | null
+  secondary_staff_ids?: string[]
   coverage_rules?: CoverageRule[] | null
 }
 
@@ -33,6 +37,7 @@ export interface Assignment {
   end_time: string
   notes?: string | null
   provisional: boolean
+  is_extra?: boolean
   override_reason?: string | null
   updated_at?: string
 }
@@ -61,6 +66,12 @@ export interface PersonalTask {
   task_date: string
   title: string
   completed: boolean
+  details?: string
+  note_color?: 'yellow' | 'rose' | 'sage' | 'blue' | 'lavender' | 'cream'
+  font_family?: 'nunito' | 'dm-sans' | 'fraunces' | 'caveat'
+  is_bold?: boolean
+  is_italic?: boolean
+  is_underline?: boolean
 }
 
 export interface BroadcastRecipient {
@@ -77,6 +88,24 @@ export interface TeamBroadcast {
   et_broadcast_recipients: BroadcastRecipient[]
 }
 
+export interface ScheduledBroadcast {
+  id: string
+  title: string
+  message: string
+  recipient_ids: string[]
+  schedule_type: 'once' | 'weekly'
+  scheduled_for: string | null
+  weekday: number | null
+  local_time: string | null
+  timezone: string
+  next_run_at: string
+  active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_sent_at: string | null
+}
+
 export interface CoverageRule {
   id: string
   weekdays: number[]
@@ -91,6 +120,8 @@ export interface CoverageRule {
   valid_until: string
   suspensions: { from: string; to: string }[]
   alternatives?: string[]
+  preferred_staff_ids?: string[]
+  secondary_staff_ids?: string[]
 }
 export interface AssignmentHistory {
   id: string
@@ -102,8 +133,27 @@ export interface AssignmentHistory {
   after_data: Assignment | null
 }
 
+export interface WorkCadence {
+ id:string; weekdays:number[]; start_time:string; end_time:string; every_weeks:number; anchor_date:string; valid_from:string; valid_until:string
+}
+
 export interface CoverageProfile {
+  work_cadences?: WorkCadence[] | null
   staff_id: string
   consultation_ids: string[]
   updated_at?: string
+}
+
+export interface LockedMonth { month:string; locked_at:string; locked_by:string }
+
+export interface RotaPublication {
+ month: string
+ published_at: string
+ version: number
+ initial_snapshot: boolean
+}
+
+export interface CoverageException {
+ id:string; work_date:string; consultation_id:string; rule_id:string; rule_snapshot:CoverageRule;
+ reason:string; created_by:string; created_by_name:string; created_at:string; revoked_at:string|null; revoked_by?:string|null;
 }
