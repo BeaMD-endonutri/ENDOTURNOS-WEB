@@ -3,14 +3,20 @@ import { supabase } from '../lib/supabase'
 
 export const RECOVERY_KEY = 'endoturnos-password-recovery'
 export function recoveryPending() {
- const params=new URLSearchParams(window.location.hash.slice(1))
- return params.get('type')==='recovery'||params.has('error_code')||sessionStorage.getItem(RECOVERY_KEY)!==null
+ const hashParams=new URLSearchParams(window.location.hash.slice(1))
+ const queryParams=new URLSearchParams(window.location.search)
+ return hashParams.get('type')==='recovery'||hashParams.has('error_code')||queryParams.has('code')||queryParams.has('error_code')||sessionStorage.getItem(RECOVERY_KEY)!==null
 }
 export function clearRecovery() {
  sessionStorage.removeItem(RECOVERY_KEY)
  const url=new URL(window.location.href)
- if(new URLSearchParams(url.hash.slice(1)).has('error_code')||new URLSearchParams(url.hash.slice(1)).get('type')==='recovery')url.hash=''
- window.history.replaceState({},'',url.pathname+url.search+url.hash)
+ const hashParams=new URLSearchParams(url.hash.slice(1))
+ if(hashParams.has('error_code')||hashParams.get('type')==='recovery')url.hash=''
+ url.searchParams.delete('code')
+ url.searchParams.delete('error')
+ url.searchParams.delete('error_code')
+ url.searchParams.delete('error_description')
+ window.history.replaceState({},'',url.pathname+(url.searchParams.toString()?'?'+url.searchParams.toString():'')+url.hash)
 }
 export default function PasswordRecovery({valid,onClose}:{valid:boolean;onClose:()=>void}) {
  const [password,setPassword]=useState(''),[confirmation,setConfirmation]=useState('')
