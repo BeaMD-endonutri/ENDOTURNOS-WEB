@@ -10,8 +10,9 @@ import type { ShiftSelection } from './ShiftEditor'
 export default memo(function SupervisorHome({onException,staff,consultations,assignments,requests,issues,profile,onAssign,onCalendar,onRequest,onBroadcast,onTeam}:{onException?:(issue:CoverageIssue)=>void;staff:Staff[];consultations:Consultation[];assignments:Assignment[];requests:ShiftRequest[];issues:CoverageIssue[];profile:Staff;onAssign:(s:ShiftSelection)=>void;onCalendar:(date:string)=>void;onRequest:(id?:string)=>void;onBroadcast:()=>void;onTeam:()=>void}) {
  const planning=usePlanning(); const {start_date:ROTA_START,end_date:ROTA_END,holidays:HOLIDAYS}=planning
  const today=format(new Date(),'yyyy-MM-dd')
+ const currentMonth=today.slice(0,7)
  const [date,setDate]=useState(today)
- const [scope,setScope]=useState('all')
+ const [scope,setScope]=useState(()=>planningMonths().includes(currentMonth)?currentMonth:'all')
  const [expanded,setExpanded]=useState(false)
  const pending=useMemo(()=>requests.filter(r=>r.status==='pending'&&r.created_by!==profile.user_id),[requests,profile.user_id])
  const activeIssues=useMemo(()=>issues.filter(i=>i.date>=today&&(scope==='all'||i.date.startsWith(scope))),[issues,scope,today])
