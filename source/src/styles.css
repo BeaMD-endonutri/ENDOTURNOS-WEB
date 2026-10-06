@@ -1374,8 +1374,3 @@ box-shadow:0 10px 22px rgba(32,37,35,.16);transform:rotate(calc((var(--sheet-ind
   .coverage-reduced-copy small{font-size:11px}
   .coverage-minimum-field{max-width:none;width:100%}
 }
-  .coverage-switch{margin-top:2px}
-  .coverage-reduced-copy b{font-size:.96rem}
-  .coverage-reduced-copy small{font-size:.88rem}
-  .coverage-minimum-field{max-width:100%}
-}

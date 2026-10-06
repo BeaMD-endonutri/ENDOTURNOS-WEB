@@ -11,7 +11,7 @@ export interface CoverageIssue {
 }
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 const isOpen = (date: string, rule: CoverageRule) => date >= rule.valid_from && date <= rule.valid_until && !rule.suspensions.some(s => date >= s.from && date <= s.to)
-const requiredForAlert = (rule: CoverageRule) => rule.fallback_min_staff && rule.fallback_min_staff < rule.min_staff ? rule.fallback_min_staff : rule.min_staff
+export const requiredForAlert = (rule: CoverageRule) => rule.fallback_min_staff !== undefined && Number.isInteger(rule.fallback_min_staff) && rule.fallback_min_staff >= 0 && rule.fallback_min_staff < rule.min_staff ? rule.fallback_min_staff : rule.min_staff
 export function minimumCoverage(rows: Assignment[], start: string, end: string): number {
   const points = [...new Set([start, end, ...rows.flatMap(a => [a.start_time.slice(0,5), a.end_time.slice(0,5)])])].filter(p => p >= start && p <= end).sort()
   return Math.min(...points.slice(0,-1).map((p,i) => new Set(rows.filter(a => a.start_time.slice(0,5) <= p && a.end_time.slice(0,5) >= points[i+1]).map(a => a.professional_id)).size))

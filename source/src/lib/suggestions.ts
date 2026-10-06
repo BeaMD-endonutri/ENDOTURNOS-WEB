@@ -5,7 +5,7 @@ import type {Assignment,Consultation,CoverageException,CoverageProfile,CoverageR
 import type {PlanningConfig} from './planningConfig'
 import {assignmentConflicts,defaultCoverageRules,hasAbsence} from './scheduling'
 import {copyRuleCheck} from './planning'
-import {buildCoverageIssues,minimumCoverage,sameCoverageRule} from './coverage'
+import {buildCoverageIssues,minimumCoverage,sameCoverageRule,requiredForAlert} from './coverage'
 export interface SuggestionContext {staff:Staff[];consultations:Consultation[];assignments:Assignment[];requests:ShiftRequest[];profiles:CoverageProfile[];exceptions:CoverageException[];planning:PlanningConfig;fingerprint:string}
 export interface SuggestedShift extends Assignment {suggestion_reason:string;reference_exception?:boolean}
 export function cadenceAllows(profile:CoverageProfile|undefined,date:string,start:string,end:string){
@@ -64,11 +64,13 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   })[0]
   if(date)monthlyFixed.push({...s,dates:[date]})
  }
- // Allocate all competing services together. Scarcity comes first; when candidate
- // counts tie, protect the consultation that is highest in a professional's own priority list.
+ // Reserve mandatory coverage across all services before filling optional places.
+ // A zero-minimum service must not take a candidate needed by a required service.
  const allocationSlots=[...slots.filter(s=>!s.r.monthly),...monthlyFixed]
- for(let level=1;level<=Math.max(0,...allocationSlots.map(s=>s.target));level++){
-  const ordered=[...allocationSlots].filter(s=>s.target>=level).sort((a,b)=>{
+ const minimumTarget=(s:Slot)=>Math.min(s.target,requiredForAlert(s.r))
+ for(const mandatory of [true,false]){
+ for(let level=1;level<=Math.max(0,...allocationSlots.map(s=>mandatory?minimumTarget(s):s.target));level++){
+  const ordered=[...allocationSlots].filter(s=>(mandatory?minimumTarget(s):s.target)>=level).sort((a,b)=>{
    const da=a.dates[0],db=b.dates[0]
    return available(a,da).length-available(b,db).length
     ||bestPersonalPriority(a,da)-bestPersonalPriority(b,db)
@@ -76,6 +78,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
     ||a.c.id.localeCompare(b.c.id)
   })
   for(const s of ordered)fill(s,s.dates[0],level)
+ }
  }
 
  // Personal work cadences are hard constraints: every active cadence interval must
