@@ -1,3 +1,4 @@
+import {cadenceIntervals,restsOn} from './cadences'
 // republish cadence-capacity fix
 import { isAbsence, workingIntervals } from './absences'
 import {addDays,differenceInCalendarWeeks,endOfMonth,format,getDay,parseISO,startOfWeek} from 'date-fns'
@@ -9,7 +10,7 @@ import {buildCoverageIssues,minimumCoverage,sameCoverageRule,requiredForAlert} f
 export interface SuggestionContext {staff:Staff[];consultations:Consultation[];assignments:Assignment[];requests:ShiftRequest[];profiles:CoverageProfile[];exceptions:CoverageException[];planning:PlanningConfig;fingerprint:string}
 export interface SuggestedShift extends Assignment {suggestion_reason:string;reference_exception?:boolean}
 export function cadenceAllows(profile:CoverageProfile|undefined,date:string,start:string,end:string){
- return !!profile?.work_cadences?.some(r=>date>=r.valid_from&&date<=r.valid_until&&r.weekdays.includes(getDay(parseISO(date)))&&r.start_time<=start&&r.end_time>=end&&differenceInCalendarWeeks(parseISO(date),parseISO(r.anchor_date),{weekStartsOn:1})%r.every_weeks===0)
+ return cadenceIntervals(profile,date).some(r=>r.start_time<=start.slice(0,5)&&r.end_time>=end.slice(0,5))
 }
 export const duration=(a:Pick<Assignment,'start_time'|'end_time'>)=>{const m=(t:string)=>Number(t.slice(0,2))*60+Number(t.slice(3,5));return m(a.end_time)-m(a.start_time)}
 export function weeklyLoad(person:string,date:string,rows:Assignment[]){const from=format(startOfWeek(parseISO(date),{weekStartsOn:1}),'yyyy-MM-dd');const to=format(addDays(parseISO(from),6),'yyyy-MM-dd');return rows.filter(a=>a.professional_id===person&&a.work_date>=from&&a.work_date<=to&&!isAbsence(a.consultation_id)).reduce((sum,a)=>sum+duration(a),0)}
@@ -18,10 +19,8 @@ export function cadenceWeekCapacity(profile:CoverageProfile|undefined,date:strin
  const weekStart=startOfWeek(parseISO(date),{weekStartsOn:1})
  let minutes=0
  for(let i=0;i<7;i++){
-  const d=addDays(weekStart,i),iso=format(d,'yyyy-MM-dd'),dow=getDay(d)
-  const intervals=profile.work_cadences.filter(r=>iso>=r.valid_from&&iso<=r.valid_until&&r.weekdays.includes(dow)&&differenceInCalendarWeeks(d,parseISO(r.anchor_date),{weekStartsOn:1})%r.every_weeks===0).map(r=>({start_time:r.start_time,end_time:r.end_time}))
-  const unique=[...new Map(intervals.map(r=>[`${r.start_time}-${r.end_time}`,r])).values()]
-  minutes+=unique.reduce((sum,r)=>sum+duration(r),0)
+  const iso=format(addDays(weekStart,i),'yyyy-MM-dd')
+  minutes+=cadenceIntervals(profile,iso).reduce((sum,r)=>sum+duration(r),0)
  }
  return minutes
 }
@@ -30,6 +29,9 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  const from=month+'-01',until=format(endOfMonth(parseISO(from)),'yyyy-MM-dd')
  const warnings:string[]=[];const proposed:SuggestedShift[]=[];const working=[...assignments]
  if(from<planning.start_date||until>planning.end_date)return {proposed,warnings:['Amplía el periodo en Configuración antes de sugerir este mes.'],issues:[]}
+ for(const a of assignments.filter(a=>a.work_date>=from&&a.work_date<=until&&!isAbsence(a.consultation_id))){
+  if(restsOn(profiles.find(p=>p.staff_id===a.professional_id),a.work_date,a.start_time,a.end_time))warnings.push(`${staff.find(p=>p.id===a.professional_id)?.display_name??'Profesional'}: el turno existente del ${a.work_date} coincide con un descanso recurrente. Revísalo manualmente.`)
+ }
  const configured=consultations.filter(c=>c.active&&!isAbsence(c.id))
  for(const p of staff.filter(p=>p.active&&p.role==='professional')){const profile=profiles.find(x=>x.staff_id===p.id);if(!profile?.consultation_ids.length||!profile.work_cadences?.length)warnings.push(`${p.display_name}: ficha de consultas o cadencias pendiente; no se propondrá.`)}
  type Slot={c:Consultation;r:CoverageRule;dates:string[];target:number}
@@ -52,7 +54,7 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
  const coverage=(s:Slot,date:string)=>minimumCoverage(workingIntervals(working).filter(a=>[s.c.id,...(s.r.alternatives??[])].includes(a.consultation_id)&&a.work_date===date&&!hasAbsence(a.professional_id,date,requests)),s.r.start_time,s.r.end_time)
  const profilePriority=(profile:CoverageProfile|undefined,consultationId:string)=>{const index=profile?.consultation_ids.indexOf(consultationId)??-1;return index<0?999:index}
  const preferredAbsent=(s:Slot,date:string)=>{const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);return preferred.length>0&&preferred.every(id=>hasAbsence(id,date,requests)||working.some(a=>a.professional_id===id&&a.work_date===date&&isAbsence(a.consultation_id)&&a.start_time<s.r.end_time&&a.end_time>s.r.start_time))}
- const substitutionAllowed=(s:Slot,date:string,id:string)=>{const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];return secondary.includes(id)&&preferredAbsent(s,date)}
+ const substitutionAllowed=(s:Slot,date:string,id:string)=>{const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];return secondary.includes(id)&&!restsOn(profiles.find(p=>p.staff_id===id),date,s.r.start_time,s.r.end_time)&&preferredAbsent(s,date)}
  const available=(s:Slot,date:string)=>{const preferred=s.r.preferred_staff_ids??(s.c.preferred_staff_id?[s.c.preferred_staff_id]:[]);const secondary=s.r.secondary_staff_ids??s.c.secondary_staff_ids??[];const tier=(id:string)=>preferred.includes(id)?0:secondary.includes(id)?1:2;return staff.filter(p=>p.active&&p.role==='professional').map(person=>({person,profile:profiles.find(p=>p.staff_id===person.id)})).filter(({person,profile})=>profile?.consultation_ids.includes(s.c.id)&&(cadenceAllows(profile,date,s.r.start_time,s.r.end_time)||substitutionAllowed(s,date,person.id))&&!assignmentConflicts({professional_id:person.id,work_date:date,consultation_id:s.c.id,start_time:s.r.start_time,end_time:s.r.end_time,provisional:false},working,requests,consultations).length).sort((a,b)=>tier(a.person.id)-tier(b.person.id)||profilePriority(a.profile,s.c.id)-profilePriority(b.profile,s.c.id)||(weeklyLoad(a.person.id,date,working)/Math.max(a.person.weekly_minutes,cadenceWeekCapacity(a.profile,date))-weeklyLoad(b.person.id,date,working)/Math.max(b.person.weekly_minutes,cadenceWeekCapacity(b.profile,date)))||a.person.display_name.localeCompare(b.person.display_name,'es'))}
  const bestPersonalPriority=(s:Slot,date:string)=>Math.min(999,...available(s,date).map(({profile})=>profilePriority(profile,s.c.id)))
  const monthlyFixed:Slot[]=[]
@@ -142,9 +144,8 @@ export function suggestMonth(month:string,ctx:SuggestionContext){
   const profile=profiles.find(p=>p.staff_id===person.id)
   if(!profile?.work_cadences?.length)continue
   for(let d=parseISO(from);format(d,'yyyy-MM-dd')<=until;d=addDays(d,1)){
-   const date=format(d,'yyyy-MM-dd'),dow=getDay(d)
-   for(const cadence of profile.work_cadences){
-    if(date<cadence.valid_from||date>cadence.valid_until||!cadence.weekdays.includes(dow)||differenceInCalendarWeeks(d,parseISO(cadence.anchor_date),{weekStartsOn:1})%cadence.every_weeks!==0)continue
+   const date=format(d,'yyyy-MM-dd')
+   for(const cadence of cadenceIntervals(profile,date)){
     if(cadenceBlocked(person.id,date,cadence.start_time,cadence.end_time))continue
     addCadenceShift(person,profile,date,cadence.start_time,cadence.end_time)
    }

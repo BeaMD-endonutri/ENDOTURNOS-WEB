@@ -1,3 +1,4 @@
+import {restsOn} from './cadences'
 import { isAbsence } from './absences'
 import { addDays, differenceInCalendarDays, differenceInCalendarWeeks, format, getDay, parseISO } from 'date-fns'
 import type { Assignment, Consultation, CoverageProfile, ShiftRequest, Staff } from '../types'
@@ -29,6 +30,7 @@ export function buildCopyPreview(assignments:Assignment[],consultations:Consulta
  blocked.push(...assignmentConflicts(target,assignments,requests,consultations))
  const profile=profiles.find(p=>p.staff_id===source.professional_id)
  if(!isAbsence(source.consultation_id)){
+ if(restsOn(profile,date,source.start_time,source.end_time))blocked.push('Descanso recurrente del profesional')
  if(!profile)review.push('Ficha de cobertura pendiente de configurar')
  else if(!profile.consultation_ids.includes(source.consultation_id))blocked.push('No puede cubrir esta consulta según su ficha')
  }
@@ -37,7 +39,7 @@ export function buildCopyPreview(assignments:Assignment[],consultations:Consulta
  })
 }
 export function findCoverageCandidates(draft:Omit<Assignment,'id'>&{id?:string},staff:Staff[],profiles:CoverageProfile[],assignments:Assignment[],requests:ShiftRequest[],consultations:Consultation[]) {
- return staff.filter(p=>p.active&&p.role==='professional').map(person=>({person,rank:(profiles.find(p=>p.staff_id===person.id)?.consultation_ids.indexOf(draft.consultation_id)??-1)+1,conflicts:assignmentConflicts({...draft,professional_id:person.id},assignments,requests,consultations)})).filter(p=>p.rank>0).sort((a,b)=>Number(a.conflicts.length>0)-Number(b.conflicts.length>0)||a.rank-b.rank||a.person.display_name.localeCompare(b.person.display_name,'es'))
+ return staff.filter(p=>p.active&&p.role==='professional').map(person=>({person,rank:(profiles.find(p=>p.staff_id===person.id)?.consultation_ids.indexOf(draft.consultation_id)??-1)+1,conflicts:[...assignmentConflicts({...draft,professional_id:person.id},assignments,requests,consultations),...(restsOn(profiles.find(p=>p.staff_id===person.id),draft.work_date,draft.start_time,draft.end_time)?['Descanso recurrente del profesional']:[])]})).filter(p=>p.rank>0).sort((a,b)=>Number(a.conflicts.length>0)-Number(b.conflicts.length>0)||a.rank-b.rank||a.person.display_name.localeCompare(b.person.display_name,'es'))
 }
 export function selectedCopyConflicts(rows:CopyPreviewRow[]):boolean {
  return rows.some((r,i)=>rows.slice(i+1).some(x=>x.target.professional_id===r.target.professional_id&&x.target.work_date===r.target.work_date&&overlaps(r.target.start_time,r.target.end_time,x.target.start_time,x.target.end_time)))

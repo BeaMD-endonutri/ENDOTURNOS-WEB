@@ -134,6 +134,7 @@ export interface AssignmentHistory {
 }
 
 export interface WorkCadence {
+ kind?:'work'|'rest'
  id:string; weekdays:number[]; start_time:string; end_time:string; every_weeks:number; anchor_date:string; valid_from:string; valid_until:string
 }
 
